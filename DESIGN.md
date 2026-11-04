@@ -66,6 +66,22 @@ progresses.
   cap; re-arm now flows straight into the pitch (phase → ACTION with pitch
   attached); client `select` funnels through the MENU→STANCE FSM edge as the
   single source (dwell bar is display-only).
+- **M5 pitcher-stall fix (built ~19:15, root-caused on overlays):** skeleton
+  overlays on batter.mov showed the batter holds the ready pose only ~0.23 s
+  (old FSM demanded a 0.5 s static hold) and full swings blur both wrists for
+  25+ frames (old FSM aborted to STANCE as tracking loss), so the server
+  never dealt. New behavior: **swing onset** — 0.15 s armed hold + clean
+  6-frame gate-ok run immediately followed by 3 both-blind frames → ACTION
+  (the clean-run requirement suppresses fragmented holds); **blind-swing
+  resolve** — sustained post-motion blindness with torso present → RESOLVE as
+  a whiff (`vh_ws 0.0, blind True`), umpire calls the pitch by location
+  (strike/ball). Also: per-keypoint 3-frame presence history, dropped-frame
+  crash fix (missing frames decay presence instead of crashing), mid-game
+  re-select switches role without wiping the score. Live-wire proof:
+  f=1004 swing_onset → FB 76.7 mph dealt → f=1032 blind_swing →
+  `pitch_result strike` (`E2E_PROOF3_OK`), after a scripted 21-pitch top half.
+  Gameplay nuance: blind full swings can't get hits yet (no contact point
+  observed); hits need a slower trackable swing.
 
 ## 2. Build process design
 
@@ -76,7 +92,9 @@ progresses.
   visual overhaul after human 10/100 look score (~05:40), first-person views +
   80×24 auto-fit (~06:10). Post-M4 hardening on real footage: detection tuning
   on `batter.mov` (~07:15, 97 pytest), "pitcher never throws" handshake fix
-  (~07:30, 100 pytest), server FSM robustness pass (109 pytest, 100/100).
+  (~07:30, 100 pytest), server FSM robustness pass (109 pytest, 100/100),
+  M5 pitcher-stall fix on overlays (~19:15, 113 pytest, 100/100, two-half
+  live proof `E2E_PROOF3_OK`).
 - **Agent routing** (per `agentAssignment.md`): fast inline triage for atomic
   tasks; spawned subagents for multi-step work (≥3 steps, multi-tool chains,
   cross-role synthesis); triage layer commits and formats results. M0 used
@@ -96,8 +114,8 @@ progresses.
 - **Score trajectory:** first run 82 (test-side frame-count errors) → 98
   (one real server bug: billboard NameError) → **100/100** after also fixing
   a foul-reset gap. Pytest grew 92 → 95 → 97 (batter.mov tests) → 100
-  (handshake tests) → 109 (FSM robustness tests) alongside; gates now take
-  ~60–90 s (video streaming).
+  (handshake tests) → 109 (FSM robustness tests) → 113 (M5 onset/resolve
+  tests) alongside; gates now take ~60–100 s (video streaming).
 - **Real-footage fixtures:** `batter.mov` (167 MB, repo root, local-only —
   NOT pushed: exceeds GitHub's 100 MB limit and is personal footage) is
   streamed by `test_batter_mov_*` + `terminal_client` eval. Newer pose models
@@ -140,6 +158,10 @@ progresses.
 | 2026-11-04 | Menu stance-shortcut + 8 s auto-pick BAT | Idle players never got a game; held stance is unambiguous BAT | Built + eval'd |
 | 2026-11-04 | Occlusion ride-through when moving (0.5 s blind cap) | 4th-frame-fail fired on motion blur mid-swing | Built + eval'd |
 | 2026-11-04 | Re-arm flows straight into pitch; select via FSM edge | Extra round-trip + dual select paths (dwell vs FSM) could diverge | Built + eval'd |
+| 2026-11-04 | Swing onset (0.15 s + clean 6f + 3 blind) replaces 0.5 s static hold | Real ready pose lasts only ~0.23 s; static hold never fired | Built + eval'd |
+| 2026-11-04 | Blind-swing resolve (whiff) instead of retry on sustained blindness | 25+ blind frames per real swing; treating as loss aborted every swing | Built, live-wire proven |
+| 2026-11-04 | Dropped frames decay presence; per-keypoint 3-frame history | A missing frame crashed the FSM; whole-frame history flickered | Built + eval'd |
+| 2026-11-04 | Mid-game re-select switches role, keeps score | Timeout/pause recovery re-sends select; rebuilding wiped the game | Built + eval'd |
 
 ## 5. Open questions
 
@@ -153,13 +175,16 @@ progresses.
 6. NEW: viewpoint — spec says batters stand *sideways*, but batter.mov is a
    *front* chest-up view and detection now follows the footage. Record 20 s
    sideways if spec-sideways is wanted.
-7. NEW: `batter.mov` distribution — keep local-only, or set up Git LFS so
+7. `batter.mov` distribution — keep local-only, or set up Git LFS so
    fresh clones get the required fixture? (Also a privacy call: it's personal
    footage on a public repo.)
+8. NEW: blind swings can't get hits (no contact observed → called by
+   location). Want contact estimated from last-known velocity, or blind full
+   swings scored as swinging strikes instead of takes?
+9. NEW: re-run the footage client (`--replay batter.mov`) and confirm the
+   pitcher throws (~17 s in) and a result posts.
 
 ---
-*Last doc update: 2026-11-04 (M0–M4 + footage hardening + FSM robustness,
-evals 100/100, pytest 109 green — verified this run). Note: the build's own
-`asd-ste100/index.html` was not updated by this work session, so its header
-still says "100 pytest" — this file is the accurate record. Next update on
-the 2-hour doc cadence or when the human live-run lands.*
+*Last doc update: 2026-11-04 (M0–M5 done, evals 100/100, pytest 113 green —
+verified this run; build report current again). Next update on the 2-hour
+doc cadence or when the human live-run lands.*

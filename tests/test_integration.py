@@ -166,6 +166,28 @@ def test_stance_rearms_from_menu_without_reset():
     assert {x["t"] for x in r} & {"pitch_result", "hit_result"}
 
 
+def test_reselect_mid_game_switches_role_without_reset():
+    # Regression: timeout/pause recovery passes MENU->STANCE again, the
+    # client re-sends select, and the old handler rebuilt the GameState,
+    # wiping the score mid-game.
+    s = Session(3)
+    s.handle({"t": "hello", "v": 1})
+    s.handle({"t": "select", "role": "BOTH", "innings": 3})
+    s.handle({"t": "stance", "held_s": 0.6})
+    s.handle({"t": "throw", "pitch": "FB", "arm_ws": 4.0,
+              "nose_shift_ws": 0.0})
+    game_before = s.game
+    assert game_before.pitches_this_half >= 1
+    r = s.handle({"t": "select", "role": "BAT", "innings": 3})
+    assert s.game is game_before, "re-select must not reset the game"
+    assert s.role == "BAT" and s.phase == "04_STANCE_READY"
+    assert [x["t"] for x in r] == ["state", "score"]
+    # ... and the surviving game still resolves the next pitch.
+    s.game.half = "bottom"
+    r = s.handle({"t": "stance", "held_s": 0.6})
+    assert s.pending_pitch is not None
+
+
 def test_ai_pitch_arrives_after_stance_then_swing_resolves():
     # Bottom-half camera flow: stance deals the AI pitch, swing resolves it.
     s = Session(3)

@@ -18,10 +18,22 @@ ul{margin:.3em 0}
 </head>
 <body>
 <h1>⚾ Retro Diamond: Optical Arcade — Progress Report</h1>
-<p class="updated">Last updated: 2026-11-04 ~07:15 UTC · All milestones complete · Score: <strong>100/100 (threshold 90) — PASS, detection tuned on batter.mov</strong></p>
+<p class="updated">Last updated: 2026-11-04 ~19:15 UTC · All milestones complete · Score: <strong>100/100 (threshold 90) — PASS, pitcher stall fixed on real footage</strong></p>
 
 <h2>Reality snapshot</h2>
-<p>Working terminal prototype done. Server (12 modules, stdlib-only) + terminal client (11 modules: OpenCV capture, OpenVINO pose, ANSI render, synth audio) + 94 pytest tests + 7-scenario eval harness. Eval score <strong>100/100</strong>, pytest <strong>94 passed</strong>, zero <code>random</code> usage anywhere, live client↔server replay run exits 0.</p>
+<p>Working terminal prototype done. Server (12 modules, stdlib-only) + terminal client (11 modules: OpenCV capture, OpenVINO pose, ANSI render, synth audio) + 113 pytest tests + 7-scenario eval harness. Eval score <strong>100/100</strong>, pytest <strong>113 passed</strong>, zero <code>random</code> usage anywhere, live two-half footage run proves the full game loop (see M5).</p>
+<p><strong>“Pitcher still no progress” — fixed and proven on batter.mov (new).</strong> Skeleton overlays of your footage showed the real failure: the batter holds the ready pose (hands by ear) only ~0.23 s, then swings — and the swing blurs <em>both</em> wrists below the confidence floor for 25+ frames. The old FSM demanded a 0.5 s static hold and treated sustained blindness as tracking loss, so every real swing aborted to STANCE and the server never dealt. New behavior: <strong>swing onset</strong> (0.15 s armed hold + clean 6-frame run + 3 blind frames → ACTION) and <strong>blind-swing resolve</strong> (sustained post-motion blindness with the torso present → RESOLVE whiff, not a retry). Also fixed en route: a dropped-frame crash, presence flicker (per-keypoint 3-frame history), and a mid-game <code>select</code> that wiped the score on timeout recovery. Live-wire proof on the real footage:</p>
+<pre>f=115  01_UNBOUND -&gt; 02_CALIBRATE (torso_detected)
+f=231  02_CALIBRATE -&gt; 03_MENU_SELECT (calibrated)
+f=692  03_MENU_SELECT -&gt; 04_STANCE_READY (auto_pick)
+f=1004 04_STANCE_READY -&gt; 05_ACTION_WINDOW (swing_onset)
+pitch dealt: FB 76.7 mph, in_zone=True   (server threw it)
+f=1032 05_ACTION_WINDOW -&gt; 06_PLAY_RESOLVE (blind_swing)
+wire result: pitch_result strike · E2E_PROOF3_OK</pre>
+<table>
+<tr><th>Ready pose (f986): hands by ear, wrists marginal</th><th>Swing launch (f1000): both wrists blind</th></tr>
+<tr><td><img src="shots/swing_ready.png" width="100%" alt="ready pose"></td><td><img src="shots/swing_blur.png" width="100%" alt="swing blur"></td></tr>
+</table>
 <p><strong>Movement detection tuned on batter.mov (new).</strong> Your 20 s front chest-up footage exposed the real pipeline: calibration <em>never locked</em> (hips out of frame), and every 50+ Ws/s spike rode on ~0.00 confidence. Fixed: close-range calibration fallback (shoulders + nose, 0.35 presence gate, median-guarded Ws), EMA-smoothed wrist midpoint, confidence-gated gap-aware trackers. Measured now: lock at ~2 s (Ws≈1179px), 3 real swings tracked (peaks 8–14 Ws/s, server clamps ≥8 to 115mph). Newer pose models (0005/0007) and CLAHE tested worse — 0001 stays. Tests + evals stream batter.mov directly (gates now take ~60 s).</p>
 <table>
 <tr><th>Camera view (batter.mov frame)</th><th>Pose detections on it</th></tr>
@@ -62,6 +74,10 @@ ul{margin:.3em 0}
 <h3>M4 — Integration <span class="ok">✔ DONE</span></h3>
 <p>Live server + replay client (real photo frames, real pose inference): exit 0, 65&nbsp;KB of ANSI frames, no errors. Eval <code>integration 5/5</code> independently confirms the wire round-trip.</p>
 </div>
+<div class="milestone">
+<h3>M5 — Pitcher stall fixed on real footage <span class="ok">✔ DONE — 100/100</span></h3>
+<p>Root-caused via skeleton overlays on batter.mov (short ready hold + full-swing motion blur). Added swing-onset detection and blind-swing resolve, per-keypoint presence history, and a no-reset mid-game re-select. Proof: scripted top half (21 pitches → bottom) + footage bottom half → AI pitch dealt → <code>pitch_result strike</code> on the wire (<code>E2E_PROOF3_OK</code>). Full gates re-run: <strong>100/100 evals, 113 pytest passed</strong>.</p>
+</div>
 
 <h2>Eval scoreboard (observed this session)</h2>
 <table>
@@ -96,7 +112,8 @@ python evals/run_evals.py --json /tmp/eval.json --threshold 90</pre>
 <li><strong>Nothing is blocked.</strong> All agent-verifiable work is complete at 100/100.</li>
 <li><strong>Do not delete/move batter.mov</strong> — tests + evals stream it as the required camera-view fixture (175 MB at repo root).</li>
 <li><strong>Viewpoint note:</strong> the spec says batters stand <em>sideways</em> to the camera, but batter.mov is a <em>front</em> chest-up view — detection now follows your footage (close-range mode). If you want spec-sideways instead, record 20 s sideways and we will re-tune.</li>
-<li><strong>Re-score request:</strong> the screenshots above are byte-exact renders of what the client emits, including the new first-person views and the stock 80×24 layout. The client now auto-fits 24/48/96-row windows (needs 80 columns, dark background). If the live game still looks bad, tell us which screen and what you see — a phone photo of the terminal helps most.</li>
+<li><strong>Re-score request:</strong> the stall is fixed — please re-run the footage client (<code>--replay batter.mov</code>) and confirm the pitcher throws (~17 s in) and a result posts. The screenshots above are byte-exact renders of what the client emits, including the new first-person views and the stock 80×24 layout. The client now auto-fits 24/48/96-row windows (needs 80 columns, dark background). If the live game still stalls or looks bad, tell us which screen and what you see — a phone photo of the terminal helps most.</li>
+<li><strong>Known gameplay nuance — blind swings can't get hits yet:</strong> a full-speed swing blurs both wrists, so no contact point is observed and the umpire calls the pitch by location (strike/ball). Hits still require a slower, trackable swing. Next step if you want it: estimate contact from last-known swing velocity, or add an onset flag to the swing message so blind full swings score as swinging strikes instead of takes — say the word.</li>
 <li><strong>Step 1 — live camera run (you, ~5 min):</strong> run the server + live-camera client above in your own terminal, click Allow on the macOS camera prompt, stand 4–7 ft back, and confirm menu dwell → stance → swing/throw → pause overlay each respond. Report back which gesture (if any) misbehaves and we will tune thresholds.</li>
 <li><strong>Step 2 — audio check:</strong> re-run the client without <code>--no-audio</code>; confirm whistle/crack/swell/jingle play via speakers. If silent, check the fallback message — the silent branch is what CI exercises.</li>
 <li><strong>Known limitation — pose rate:</strong> OpenVINO inference measured ~63&nbsp;ms/frame on CPU (~16&nbsp;fps) vs the 60&nbsp;fps spec target. Capture stays 60&nbsp;Hz; pose runs slower with extrapolation. If full-rate pose matters, next options are a smaller model or Apple-silicon GPU delegate — say the word and we will scope it.</li>
@@ -106,6 +123,7 @@ python evals/run_evals.py --json /tmp/eval.json --threshold 90</pre>
 
 <h2>Log</h2>
 <ul>
+<li>~19:15 UTC — “Pitcher still no progress” fixed: swing-onset + blind-swing resolve from batter.mov overlays; dropped-frame crash, presence history, no-reset re-select. Two-half live proof: 21 scripted pitches → bottom → footage swing → AI pitch → pitch_result strike (E2E_PROOF3_OK). 100/100 + 113 pytest green.</li>
 <li>~07:30 UTC — “Pitcher never throws” fixed: camera path now sends stance on load (edge-triggered), server re-arms from MENU without resetting. Live-wire proof: stance→ACTION→hit_result+score, timeout→rearm. 100/100 + 100 pytest green.</li>
 <li>~07:15 UTC — Detection tuned on batter.mov: close-range calibration, gated trackers, 3 real swings tracked. 100/100 + 97 pytest green.</li>
 <li>~06:10 UTC — First-person views (batter/pitcher) + 80×24 auto-fit + live scoreboard fix. 100/100 + 95 pytest green, 9 screenshots/run.</li>

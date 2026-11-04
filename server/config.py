@@ -41,6 +41,8 @@ IDLE_SPEED_WS = 1.5  # below this in ACTION_WINDOW = idle posture shift
 # batter). A held stance whose wrists suddenly go blind is a swing launch.
 ONSET_ARM_S = 0.15  # stance-hold time that arms swing-onset detection
 ONSET_BLIND_FRAMES = 3  # both-wrists-stale run that fires swing onset
+ONSET_CLEAN_FRAMES = 6  # contiguous gate-ok frames right before the blind
+# run: launch must immediately follow a solid hold, not a fragmented one
 
 # --- Batting kinematics ---
 VH_MIN_WS = 2.0

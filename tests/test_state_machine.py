@@ -283,6 +283,18 @@ def test_onset_requires_armed_hold():
     assert fsm.state == STANCE
 
 
+def test_onset_requires_clean_hold():
+    fsm = _to_stance()
+    # Fragmented hold: 12 gate-ok frames scattered in runs of 3 arms
+    # the timer (0.2 s) but no clean 6-frame run precedes the blind
+    # run, so a passing shadow is not mistaken for a swing launch.
+    for _ in range(4):
+        assert feed(fsm, gate_frames(3)) == []
+        assert feed(fsm, neutral_frames(2)) == []
+    assert feed(fsm, occlusion_frames(3)) == []
+    assert fsm.state == STANCE
+
+
 def test_real_batter_mov_swing_resolves():
     import os
     import cv2

@@ -119,6 +119,15 @@ class Session:
             role = str(msg.get("role", "BOTH")).upper()
             if role not in ("BAT", "PITCH", "BOTH"):
                 return [make_error("unknown role: %r" % (role,))]
+            # Mid-game re-select (timeout/pause recovery passes MENU->STANCE
+            # again and the client re-sends select) switches role without
+            # wiping the score; only a fresh or finished game is (re)built.
+            if (not g.over
+                    and (g.batters_faced or g.pitches_this_half)):
+                self.role = role
+                self.pending_pitch = None
+                self._set_phase(STANCE)
+                return [self.state_msg(), make_score(g)]
             try:
                 innings = int(msg.get("innings", self.game.max_innings))
                 game = GameState(innings)

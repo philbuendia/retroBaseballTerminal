@@ -185,8 +185,19 @@ def check_sm_occlusion():
     assert trs == []
     trs, _ = _feed(fsm, occlusion_frames(8))
     assert trs == [] and fsm.state == STANCE, "unprimed %r" % (trs,)
+    # Fragmented hold (runs of 3, timer armed) + blind run: suppressed.
+    fsm = TrackingFSM()
+    _to_menu(fsm)
+    _to_stance(fsm)
+    frag = []
+    for _ in range(4):
+        frag += gate_frames(3) + neutral_frames(2)
+    trs, _ = _feed(fsm, frag)
+    assert trs == [] and fsm.state == STANCE, "frag hold %r" % (trs,)
+    trs, _ = _feed(fsm, occlusion_frames(3))
+    assert trs == [] and fsm.state == STANCE, "frag onset %r" % (trs,)
     return ("3f extrapolated, 4th fails; blur rides after motion, 0.5s "
-            "blind-swing cap; onset arms at 0.15s hold + 3 blind")
+            "blind-swing cap; onset needs 0.15s + clean 6f + 3 blind")
 
 
 def check_sm_idle_reject():

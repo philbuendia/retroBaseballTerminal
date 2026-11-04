@@ -24,7 +24,8 @@ from .config import (KP, CALIBRATE_TIMEOUT_S, MENU_DWELL_S, STANCE_TIMEOUT_S,
                      STANCE_GATE_DIST_WS, CONF_MIN, LOCK_CONF, NOSE_CONF,
                      WRIST_CONF, DWELL_GAP_S, GATE_GAP_S, MENU_AUTO_PICK_S,
                      EXTRAPOLATE_MAX_FRAMES, IDLE_SPEED_WS,
-                     ONSET_ARM_S, ONSET_BLIND_FRAMES)
+                     ONSET_ARM_S, ONSET_BLIND_FRAMES,
+                     ONSET_CLEAN_FRAMES)
 
 UNBOUND = "01_UNBOUND"
 CALIBRATE = "02_CALIBRATE"
@@ -74,7 +75,9 @@ class TrackingFSM:
         self._menu_gate_t = 0.0
         self._gate_t = 0.0
         self._gate_gap = 0.0
+        self._gate_run = 0
         self._onset_blind = 0
+        self._onset_run = 0
         self._pause_hold_t = 0.0
         self._out_t = 0.0
         self._cal_samples = []
@@ -92,6 +95,12 @@ class TrackingFSM:
         tr = Transition(self.state, to_state, event, data or {})
         self.state = to_state
         self.t_state = 0.0
+        if to_state == STANCE:
+            self._gate_t = 0.0
+            self._gate_gap = 0.0
+            self._gate_run = 0
+            self._onset_blind = 0
+            self._onset_run = 0
         return tr
 
     @staticmethod
@@ -344,6 +353,7 @@ class TrackingFSM:
                 self._onset_blind = 0
                 self._gate_t += dt
                 self._gate_gap = 0.0
+                self._gate_run += 1
                 if self._gate_t >= STANCE_GATE_HOLD_S:
                     self._gate_t = 0.0
                     self._path_x = []
@@ -363,10 +373,14 @@ class TrackingFSM:
                 # the streaks bound the blind ride-through in ACTION.
                 if (conf[KP["Lwri"]] < WRIST_CONF
                         and conf[KP["Rwri"]] < WRIST_CONF):
+                    if self._onset_blind == 0:
+                        self._onset_run = self._gate_run
                     self._onset_blind += 1
                 else:
                     self._onset_blind = 0
+                self._gate_run = 0
                 if (self._gate_t >= ONSET_ARM_S
+                        and self._onset_run >= ONSET_CLEAN_FRAMES
                         and self._onset_blind >= ONSET_BLIND_FRAMES):
                     self._onset_blind = 0
                     self._gate_t = 0.0
