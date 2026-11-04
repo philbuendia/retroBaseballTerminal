@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retro Diamond: Optical Arcade — Progress Report</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:900px;margin:2em auto;padding:0 1em;line-height:1.5;background:#0a0a0a;color:#e0e0e0}
+h1,h2{color:#7CFC00}table{border-collapse:collapse;width:100%}th,td{border:1px solid #444;padding:.4em .6em;text-align:left}th{background:#1a1a1a}
+.ok{color:#7CFC00}.warn{color:#ffb000}.bad{color:#ff4444}.info{color:#66ccff}
+code{background:#1a1a1a;padding:.1em .3em;border-radius:3px}
+.milestone{border:1px solid #444;border-radius:8px;padding:1em;margin:1em 0}
+ human{border:1px solid #ffb000;border-radius:8px;padding:1em;margin:1em 0;background:#1a1400}
+ul{margin:.3em 0}
+.updated{color:#888;font-size:.9em}
+</style>
+</head>
+<body>
+<h1>⚾ Retro Diamond: Optical Arcade — Progress Report</h1>
+<p class="updated">Last updated: 2026-11-04 04:15 UTC · Milestone: M0 in progress · Score: not yet evaluated (target ≥90/100)</p>
+
+<h2>Reality snapshot</h2>
+<p>Project just started. Workspace contains only <code>description.md</code> (379 words), <code>architecture.md</code> (1185 words), <code>agentAssignment.md</code> (routing matrix). No client, server, evals, or tests exist yet. Scaffolding directories <code>client/ server/ evals/ tests/ asd-ste100/</code> created. Brief saved verbatim to <code>/tmp/game/brief.md</code> (1564 words total → <strong>Standard</strong> browser-game build: no art director, one critic round).</p>
+
+<h2>Milestones</h2>
+<div class="milestone">
+<h3>M0 — Plan + routing + scaffold <span class="warn">◐ IN PROGRESS</span></h3>
+<ul>
+<li>Routing per agentAssignment.md: triage inline (Spark-equivalent), complex multi-step → spawned subagents (Wonder-equivalent).</li>
+<li>Next: planner subagents → spec → scaffold files → this report updated.</li>
+</ul>
+</div>
+<div class="milestone">
+<h3>M1 — Server prototype <span class="info">○ PENDING</span></h3>
+<p>State machine (7 states), batting/pitching kinematics, inning rules, hit resolution + arcade scoring. Real deterministic math, no random outcomes.</p>
+</div>
+<div class="milestone">
+<h3>M2 — Client prototype <span class="info">○ PENDING</span></h3>
+<p>Webcam pose (9 landmarks) → WebSocket → 160×192 canvas upscaled + scanlines + WebAudio synth. Touchless menu/stance/action/pause.</p>
+</div>
+<div class="milestone">
+<h3>M3 — Evals + tests ≥90/100 <span class="info">○ PENDING</span></h3>
+<p>100-pt rubric over spec requirements. Real spec-derived vectors only; no random/fake data. Must show measured score.</p>
+</div>
+<div class="milestone">
+<h3>M4 — Integration + final <span class="info">○ PENDING</span></h3>
+<p>Client↔server round-trip verified, critic round done, final play clean, handoff.</p>
+</div>
+
+<h2>Eval scoreboard</h2>
+<table>
+<tr><th>Category</th><th>Points</th><th>Status</th></tr>
+<tr><td>State machine transitions</td><td>/20</td><td class="info">not built</td></tr>
+<tr><td>Batting kinematics</td><td>/20</td><td class="info">not built</td></tr>
+<tr><td>Pitching kinematics</td><td>/15</td><td class="info">not built</td></tr>
+<tr><td>Inning structure &amp; pacing</td><td>/15</td><td class="info">not built</td></tr>
+<tr><td>Hit resolution &amp; scoring</td><td>/15</td><td class="info">not built</td></tr>
+<tr><td>Client render/audio/input</td><td>/10</td><td class="info">not built</td></tr>
+<tr><td>Integration (client↔server)</td><td>/5</td><td class="info">not built</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>0/100</strong></td><td>target ≥90</td></tr>
+</table>
+
+<h2>🧑‍💻 Human developer — how to unblock</h2>
+<div class="human">
+<ul>
+<li><strong>Right now: nothing blocked.</strong> No action needed; planners + build starting.</li>
+<li><strong>Webcam check (needed at M2 playtest):</strong> confirm a 720p60 webcam is available on the machine that will run the client playtest. If headless/CI only, approve fallback: playtest with a recorded landmark trace file instead of live camera, and we will label that honestly in this report.</li>
+<li><strong>Pose library approval:</strong> plan is MediaPipe Pose (9 upper-body landmarks) via CDN in the browser client. If offline-only is required, tell us before M2 and we will vendor the model locally.</li>
+<li><strong>Ports:</strong> server will use <code>127.0.0.1:8765</code> (game) and evals are local-only. Flag now if those are reserved.</li>
+<li><strong>If stuck later:</strong> this section will name the exact file, command, and error, plus the decision needed from you.</li>
+</ul>
+</div>
+
+<h2>Log</h2>
+<ul>
+<li>04:15 UTC — M0 started. Scaffold created, brief saved, Standard size selected (1564 &lt; 2000 words).</li>
+</ul>
+</body>
+</html>
