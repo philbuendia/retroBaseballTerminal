@@ -7,8 +7,7 @@ to bat, throw toward the lens to pitch.
 ## What it is
 
 - **Genre:** touchless arcade sports sim, late-1970s home-console aesthetic
-  (chunky 8-bit sprites, 160x192 internal grid upscaled with CRT scanlines,
-  square-wave synth audio).
+  (chunky 8-bit sprites, ANSI terminal renderer, square-wave synth audio).
 - **Input:** monocular RGB webcam at 720p60. Optical pose estimation tracks
   9 upper-body landmarks (nose, shoulders, elbows, wrists, hips) every frame.
 - **Modes:** Batter mode (stance, swing timing/power, launch angle, check
@@ -25,34 +24,47 @@ to bat, throw toward the lens to pitch.
 | `description.md` | Original game concept brief |
 | `architecture.md` | Technical spec: state machine, kinematics, rules, scoring |
 | `agentAssignment.md` | Agent model-routing plan used during the build |
+| `BUILD_CONTRACT.md` | Locked build contract: env facts, wire protocol, APIs, numbers |
 | `DESIGN.md` | Design summary and build/test decision log |
-| `client/` | Browser client (pose capture, canvas render, synth audio) — planned |
-| `server/` | Game server (state machine, physics, rules) — planned |
-| `evals/` | 100-pt spec rubric and scoring harness — planned |
-| `tests/` | Unit/integration tests — planned |
-| `asd-ste100/` | Machine-generated progress report (`index.html`) |
+| `client/` | Terminal client: OpenCV capture, OpenVINO pose, ANSI render, synth audio |
+| `server/` | Game server (stdlib-only): FSM, kinematics, rules, NDJSON TCP server |
+| `evals/` | 100-pt spec rubric (7 scenarios) + screenshot harness |
+| `tests/` | Pytest suite (95 tests) |
+| `models/` | OpenVINO pose model + test photo for replay mode |
+| `asd-ste100/` | Progress report (`index.html`) + eval-run screenshots (`shots/`) |
 
 ## Status
 
-Early build (M0: planning + scaffold). Spec docs exist; `client/`, `server/`,
-`evals/`, `tests/` are scaffolded but empty. See
-[asd-ste100/index.html](asd-ste100/index.html) for the live progress report
-and [DESIGN.md](DESIGN.md) for decisions so far.
+Working prototype, all milestones M0–M4 complete. Verified this doc run:
+**evals 100/100 (PASS, threshold 90), pytest 95 passed**, zero `random`
+usage, live client↔server replay run green. See
+[asd-ste100/index.html](asd-ste100/index.html) for the full progress report
+with screenshots, and [DESIGN.md](DESIGN.md) for design and decisions.
+Remaining: human live-camera run + audio check (see report).
 
-## Planned quickstart
+![batter view](asd-ste100/shots/field_bat.png)
+![pitcher view](asd-ste100/shots/field_pitch.png)
+
+## Quickstart
 
 ```bash
-# server (game logic + WebSocket on 127.0.0.1:8765)
-python -m server.app
-
-# client (open in a browser with webcam access)
-open client/index.html
+source .venv/bin/activate
+# terminal 1: server
+python -m server --port 8765 --innings 3
+# terminal 2: client (headless replay — no camera needed)
+python -m client.main --server 127.0.0.1 --port 8765 --replay models/person.jpg --no-audio
+# client with live camera (click Allow on the macOS prompt):
+python -m client.main --server 127.0.0.1 --port 8765
+# gates:
+python -m pytest tests/ -q
+python evals/run_evals.py --json /tmp/eval.json --threshold 90
 ```
 
-Not runnable yet — this section becomes real at M2.
+## Requirements
 
-## Requirements (target)
-
-- Webcam: 720p @ 60fps (prevents motion blur on fast swings)
+- Python 3.14, project env `.venv/` (`pip install -r client/requirements.txt`
+  plus pytest: numpy, opencv-python-headless, openvino)
+- Webcam: 720p @ 60fps for live play (replay mode works headless)
 - Play space: 4 ft wide x 6 ft deep, 4–7 ft from the display
-- Browser with camera access + CDN access (MediaPipe Pose, pending approval)
+- 80-column terminal, dark background (auto-fits 24/48/96-row windows)
+- macOS `afplay` for audio (`--no-audio` fallback otherwise)

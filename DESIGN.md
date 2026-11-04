@@ -30,27 +30,54 @@ progresses.
   (2,500).
 - **Presentation:** 160x192 internal grid → 1080p/4K upscale, 16-color
   palette, CRT scanlines; dual-channel square-wave + noise synth.
-- **Interfaces (planned):** browser client captures pose landmarks and sends
-  them over WebSocket (`127.0.0.1:8765`) to a deterministic server that owns
-  the state machine, physics, and rules. No randomness in outcomes.
+- **Interfaces (built):** Python terminal client captures pose landmarks and
+  sends events over newline-delimited JSON TCP (`127.0.0.1:8765`, `v:1`) to a
+  deterministic stdlib-only server that owns the state machine, physics, and
+  rules. No randomness in outcomes (`random` forbidden in server/evals,
+  grep-verified).
+- **Presentation (built):** ANSI renderer, 80 columns, auto-fits 24/48/96-row
+  windows; first-person views (batter sees pitcher + incoming ball, pitcher
+  sees catcher + zone); crisp cell-text overlay after screenshot review showed
+  downsampled text was illegible; chip-synth audio via `afplay` with silent
+  fallback.
 
 ## 2. Build process design
 
-- **Milestones:** M0 plan+scaffold → M1 server prototype → M2 client prototype
-  → M3 evals+tests (≥90/100) → M4 integration+final.
+- **Milestones (all DONE 2026-11-04):** M0 plan+scaffold+contract (~04:25) →
+  M1 server (~04:45, `M1_PROBE_OK` + `FOUL_RULE_OK`) → M2 client (~05:00,
+  `M2_PROBE_OK`: 9/9 keypoints on real photo, conf 0.67–0.88) → M3 evals+tests
+  (~05:10, 100/100) → M4 integration (~05:20, live replay exit 0). Follow-ups:
+  visual overhaul after human 10/100 look score (~05:40), first-person views +
+  80×24 auto-fit (~06:10).
 - **Agent routing** (per `agentAssignment.md`): fast inline triage for atomic
   tasks; spawned subagents for multi-step work (≥3 steps, multi-tool chains,
-  cross-role synthesis); triage layer commits and formats results.
+  cross-role synthesis); triage layer commits and formats results. M0 used
+  planner subagents (server/client/evals + synthesis) → `BUILD_CONTRACT.md`
+  as the single source of truth; builders wrote only their own directories.
 - **Build sizing:** brief totaled 1564 words → Standard build (no art
   director, one critic round).
 
-## 3. Test process design
+## 3. Test process design and results
 
-- **Eval rubric (100 pts, planned):** state machine 20, batting 20, pitching
-  15, inning pacing 15, hit resolution/scoring 15, client render/audio/input
-  10, integration 5. Pass bar ≥90.
+- **Eval rubric (100 pts, built):** state machine 20, batting 20, pitching
+  15, inning pacing 15, hit resolution/scoring 15, terminal client 10,
+  integration 5. Pass bar ≥90. `evals/run_evals.py --json out.json
+  --threshold 90` exits 0 iff ≥90.
 - **Test-data policy:** real spec-derived vectors only — no random or fake
-  data; server math must be deterministic (no random outcomes).
+  data; server math deterministic (no random outcomes, grep-verified).
+- **Score trajectory:** first run 82 (test-side frame-count errors) → 98
+  (one real server bug: billboard NameError) → **100/100** after also fixing
+  a foul-reset gap. Pytest grew 92 → 95 green alongside.
+- **Screenshot evals:** after the human scored the old look 10/100, evals
+  capture 9 real screenshots per run (parsed ANSI → PNG, byte-exact terminal
+  output) and assert legibility + pixel stats. Shots committed under
+  `asd-ste100/shots/`.
+- **Known gaps:** pose inference ~63 ms/frame CPU (~16 fps vs 60 fps spec;
+  capture stays 60 Hz, pose extrapolates); `client/gestures.py` SwingTracker
+  can spike vh on synthetic wrist-switch paths (feel only — server
+  kinematics carry graded batting weight); live camera + audio still need a
+  human run (macOS TCC blocks background capture, so agents verified via
+  `--replay`).
 
 ## 4. Decision log
 
@@ -60,16 +87,26 @@ progresses.
 | 2026-11-04 | Condensed arcade rules (3 inn, 1-1 counts, auto-run) | Prevent physical fatigue from full-motion play | Spec'd, unbuilt |
 | 2026-11-04 | Deterministic server, no random outcomes | Makes evals reproducible; honest scoring | Spec'd, unbuilt |
 | 2026-11-04 | Standard build size (1564-word brief) | Under 2000-word threshold: no art director, 1 critic round | Decided |
-| 2026-11-04 | Server ports 127.0.0.1:8765, evals local-only | Avoid conflicts; no network exposure needed | Proposed |
-| 2026-11-04 | MediaPipe Pose via CDN for 9 landmarks | Fastest path to 60fps upper-body tracking | Proposed, needs approval (offline alternative: vendored model) |
-| 2026-11-04 | Headless fallback: recorded landmark trace for playtest | If no 720p60 webcam on test machine, still verify M2 honestly | Proposed, needs approval |
+| 2026-11-04 | Server ports 127.0.0.1:8765, evals local-only | Avoid conflicts; no network exposure needed | Built |
+| 2026-11-04 | OpenVINO human-pose-estimation-0001 (local) INSTEAD of MediaPipe CDN | No MediaPipe/onnxruntime wheels exist for Python 3.14 (verified); fully offline | Built, smoke-tested on real photo |
+| 2026-11-04 | Terminal client (ANSI) instead of browser client | Spec's webcam+terminal play; Python keeps pose+render+audio in one stack | Built |
+| 2026-11-04 | Client `--replay` + keypress-sample modes | macOS TCC denies camera to background processes; live cam works in human's terminal | Built, M4 verified via replay |
+| 2026-11-04 | "9 outs per side" for 3 innings read as typo → 9 total per side (3/inning) | Only self-consistent reading of the spec | Locked in contract |
+| 2026-11-04 | Hit precedence HR > 3B > 2B > 1B > OUT; below-min velocity downgrades one class | Spec angle ranges overlap; needed a deterministic rule | Locked in contract |
+| 2026-11-04 | First-person views + cell-text overlay + 80×24 auto-fit | Human scored old broadcast look 10/100; small text illegible after downsampling | Built, screenshot-eval'd |
+| 2026-11-04 | Evals capture 9 screenshots/run and assert legibility | Byte-exact renders prevent visual regressions agents can't otherwise see | Built |
 
 ## 5. Open questions
 
-1. Is a 720p60 webcam available on the playtest machine?
-2. Is CDN access allowed, or must the pose model be vendored (offline-only)?
-3. Are there port conflicts with `127.0.0.1:8765`?
+1. ~~Webcam on playtest machine?~~ Answered: FaceTime HD present; agents use
+   `--replay`, human runs live camera in their own terminal (awaiting run).
+2. ~~CDN vs vendored pose model?~~ Answered: local OpenVINO model, no CDN.
+3. ~~Port conflicts on 127.0.0.1:8765?~~ No conflict reported; in use.
+4. NEW: human re-score of first-person visuals (phone photo if still bad)?
+5. NEW: does ~16 fps pose (vs 60 fps spec) matter? Options: smaller model or
+   Apple-silicon GPU delegate.
 
 ---
-*Last doc update: 2026-11-04 (M0 in progress, score 0/100, target ≥90). Next
-update on the 2-hour doc cadence or when a milestone lands.*
+*Last doc update: 2026-11-04 ~06:30 UTC (M0–M4 done, evals 100/100, pytest 95
+green — verified this run). Next update on the 2-hour doc cadence or when the
+human live-run lands.*

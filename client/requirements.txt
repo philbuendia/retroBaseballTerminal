@@ -1,0 +1,5 @@
+# Retro Diamond terminal client dependencies.
+# Pose backend is OpenVINO (no mediapipe wheels exist for Python 3.14).
+numpy>=2.0
+opencv-python-headless>=4.9
+openvino>=2025.0
