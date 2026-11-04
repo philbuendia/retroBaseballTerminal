@@ -44,6 +44,8 @@ def test_frame_text_is_legible():
     menu = _strip_sgr(r.to_string())
     assert "R E T R O" in menu and "D I A M O N D" in menu
     assert "HOLD TO SELECT" in menu
+    r.render_menu(auto_pick_s=5.2)
+    assert "AUTO-BAT 5S" in _strip_sgr(r.to_string())
     r.render_field({"runs": {"HOME": 3, "AWAY": 1}, "arcade": 1250,
                     "inning": 2, "half": "bottom",
                     "count": {"balls": 2, "strikes": 1}, "outs": 1})

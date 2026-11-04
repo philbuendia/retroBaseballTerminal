@@ -7,6 +7,8 @@ the server's resolve_* functions need. Canonical keypoint order:
 
 import math
 
+from server.config import WRIST_CONF as WRIST_CONF_MIN, DWELL_GAP_S
+
 KP = {"nose": 0, "Lsho": 1, "Rsho": 2, "Lelb": 3, "Relb": 4,
       "Lwri": 5, "Rwri": 6, "Lhip": 7, "Rhip": 8}
 
@@ -16,10 +18,6 @@ STANCE_GATE_HOLD_S = 0.5
 PAUSE_HOLD_S = 1.5
 IDLE_SPEED_WS = 1.5
 NOSE_SCATTER_WS = 0.3
-# Wrist samples below this confidence are dropouts (batter.mov: every
-# spurious >50 Ws/s spike rode on conf < 0.1). Dropped frames hold the
-# last accepted position and stretch the velocity window honestly.
-WRIST_CONF_MIN = 0.3
 
 
 def _dist(ax, ay, bx, by):
@@ -105,12 +103,18 @@ def classify_pitch_pose(pts):
 
 
 class DwellTracker:
-    """2-second dwell-to-select. update(side, dt) -> locked side or None."""
+    """2-second dwell-to-select. update(side, dt) -> locked side or None.
 
-    def __init__(self, dwell_s=MENU_DWELL_S):
+    Brief (<0.3 s) candidate gaps pause the dwell instead of resetting
+    it, so real-world wrist flicker does not restart the 2 s hold.
+    """
+
+    def __init__(self, dwell_s=MENU_DWELL_S, gap_s=DWELL_GAP_S):
         self.dwell_s = dwell_s
+        self.gap_s = gap_s
         self.side = None
         self.t = 0.0
+        self._gap = 0.0
 
     @property
     def frac(self):
@@ -121,14 +125,19 @@ class DwellTracker:
     def update(self, side, dt):
         if side is not None and side == self.side:
             self.t += dt
+            self._gap = 0.0
         elif side is not None:
             self.side = side
             self.t = dt
+            self._gap = 0.0
         else:
-            self.side = None
-            self.t = 0.0
+            self._gap += dt
+            if self._gap > self.gap_s:
+                self.side = None
+                self.t = 0.0
         if self.side is not None and self.t >= self.dwell_s:
-            pick, self.side, self.t = self.side, None, 0.0
+            pick = self.side
+            self.side, self.t, self._gap = None, 0.0, 0.0
             return pick
         return None
 

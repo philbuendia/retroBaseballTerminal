@@ -2,9 +2,10 @@
 
 from conftest import feed
 from fixtures.landmarks import (
-    DT, frame, base_points, neutral_frames, menu_frames, gate_frames,
-    crossed_frames, frustum_gap, low_torso_frames, occlusion_frames,
-    idle_sway_frames, swing_sweep_frames, vertical_drift_frames,
+    DT, frame, base_points, with_wrists, repeat, neutral_frames,
+    menu_frames, gate_frames, crossed_frames, frustum_gap,
+    low_torso_frames, occlusion_frames, idle_sway_frames,
+    swing_sweep_frames, vertical_drift_frames,
     full_cycle_frames, gate_points,
 )
 from server.state_machine import (
@@ -129,8 +130,9 @@ def test_idle_reject_subthreshold_sway():
 def test_frustum_gap_pauses(fsm_to_menu):
     fsm = fsm_to_menu
     feed(fsm, menu_frames("BAT", 121))
-    trs = feed(fsm, frustum_gap(60))
-    assert len(trs) == 1 and trs[0][0] == 60
+    # 2-frame presence release, then the 1.0 s trip fires on gap frame 62.
+    trs = feed(fsm, frustum_gap(63))
+    assert len(trs) == 1 and trs[0][0] == 62
     assert trs[0][1].event == "out_of_frustum"
     assert fsm.state == PAUSE
 
@@ -138,7 +140,8 @@ def test_frustum_gap_pauses(fsm_to_menu):
 def test_low_torso_conf_pauses(fsm_to_menu):
     fsm = fsm_to_menu
     feed(fsm, menu_frames("BAT", 121))
-    trs = feed(fsm, low_torso_frames(60))
+    # 3-frame presence release + 1.0 s out-of-frustum trip.
+    trs = feed(fsm, low_torso_frames(64))
     assert len(trs) == 1 and trs[0][1].event == "out_of_frustum"
 
 
@@ -168,4 +171,157 @@ def test_resolve_ignores_pause_gesture():
         fsm.update(m, DT)
     assert fsm.state == RESOLVE
     assert feed(fsm, crossed_frames(91)) == []
+    assert fsm.state == RESOLVE
+
+
+def test_menu_auto_pick_bat_after_idle(fsm_to_menu):
+    fsm = fsm_to_menu
+    trs = feed(fsm, neutral_frames(490))
+    assert [t.event for _, t in trs] == ["auto_pick"]
+    assert fsm.state == STANCE and fsm.role == "BAT"
+
+
+def test_menu_stance_shortcut_picks_bat(fsm_to_menu):
+    fsm = fsm_to_menu
+    # Hands held at/below shoulder height: no tile dwell, stance hold only.
+    pts = with_wrists((0.3, -0.1), (0.5, -0.15))
+    trs = feed(fsm, repeat(pts, 121))
+    assert [t.event for _, t in trs] == ["stance_selected"]
+    assert fsm.state == STANCE and fsm.role == "BAT"
+
+
+def test_menu_pitch_grips_do_not_shortcut(fsm_to_menu):
+    grips = [
+        with_wrists((0.0, -0.55), (0.1, -0.6)),    # FB hands at chest
+        with_wrists((-0.2, 1.3), (0.2, 1.3)),      # CB overhead
+        with_wrists((-0.45, -1.1), (0.3, -0.4)),   # CH hand on hip
+    ]
+    wide = base_points()
+    wide[3] = (-1.3, -0.2)
+    wide[4] = (1.3, -0.2)
+    wide[5] = (-1.0, -0.6)
+    wide[6] = (1.0, -0.6)
+    grips.append(wide)                             # SL flared
+    for pts in grips:
+        fsm = TrackingFSM()
+        fsm.update(frame(base_points()), DT)
+        feed(fsm, neutral_frames(121))
+        assert fsm.state == MENU
+        # No grip may declare the player a batter (FB chest-hold reads as
+        # a pause pose instead, which is also acceptable here).
+        for _, tr in feed(fsm, repeat(pts, 130)):
+            assert tr.to_state != STANCE, tr.event
+        assert fsm.role is None
+
+
+def test_menu_dwell_tolerates_brief_gap(fsm_to_menu):
+    fsm = fsm_to_menu
+    seq = menu_frames("BAT", 60) + neutral_frames(12) + menu_frames("BAT", 70)
+    trs = feed(fsm, seq)
+    assert [t.event for _, t in trs] == ["menu_selected"]
+    assert fsm.role == "BAT"
+
+
+def test_menu_dwell_resets_on_long_gap(fsm_to_menu):
+    fsm = fsm_to_menu
+    seq = menu_frames("BAT", 60) + neutral_frames(40) + menu_frames("BAT", 70)
+    assert feed(fsm, seq) == []
+    assert fsm.state == MENU and fsm.role is None
+
+
+def test_action_static_blindness_fails():
+    fsm = _to_action()
+    trs = feed(fsm, occlusion_frames(4))
+    assert [t.event for _, t in trs] == ["occlusion_fail"]
+    assert fsm.state == STANCE
+
+
+def test_action_rides_blur_after_real_motion():
+    fsm = _to_action()
+    # +x lateral motion at 3 Ws/s: latches moved, never crosses midline.
+    sweep = [frame(with_wrists((0.45 + i * 0.05, 0.05),
+                               (0.55 + i * 0.05, 0.05))) for i in range(6)]
+    assert feed(fsm, sweep) == []
+    assert fsm.state == ACTION
+    assert feed(fsm, occlusion_frames(6)) == []  # blur: ride through
+    assert fsm.state == ACTION
+    # 0.5 s both-blind cap after real motion: a completed blind swing
+    # (batter.mov blurs both wrists for 25+ frames per real swing), so
+    # this resolves as a whiff instead of failing back to STANCE.
+    trs = feed(fsm, occlusion_frames(30))
+    assert [t.event for _, t in trs] == ["blind_swing"]
+    assert fsm.state == RESOLVE
+    assert trs[0][1].data["vh_ws"] == 0.0
+    assert trs[0][1].data["blind"] is True
+
+
+def _to_stance():
+    fsm = TrackingFSM()
+    fsm.update(frame(base_points()), DT)
+    feed(fsm, neutral_frames(121))
+    feed(fsm, menu_frames("BAT", 121))
+    assert fsm.state == STANCE
+    return fsm
+
+
+def test_swing_onset_after_hold():
+    fsm = _to_stance()
+    # 0.2 s hold arms onset (below the 0.5 s stance_loaded bar).
+    assert feed(fsm, gate_frames(12)) == []
+    assert fsm.state == STANCE
+    # Wrists go blind = swing launch (motion blur), not a freeze.
+    trs = feed(fsm, occlusion_frames(3))
+    assert [t.event for _, t in trs] == ["swing_onset"]
+    assert fsm.state == ACTION
+
+
+def test_onset_requires_armed_hold():
+    fsm = _to_stance()
+    # 4-frame brush through the gate does not arm onset.
+    assert feed(fsm, gate_frames(4)) == []
+    assert feed(fsm, occlusion_frames(8)) == []
+    assert fsm.state == STANCE
+
+
+def test_real_batter_mov_swing_resolves():
+    import os
+    import cv2
+    from client.pose import PoseEstimator
+    from client.calibration import SilhouetteCalibrator
+    mov = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "batter.mov")
+    assert os.path.exists(mov), "batter.mov (camera view) missing"
+    fsm = TrackingFSM()
+    fsm.update(frame(base_points()), DT)
+    feed(fsm, neutral_frames(121))
+    feed(fsm, menu_frames("BAT", 121))
+    feed(fsm, gate_frames(31))
+    assert fsm.state == ACTION
+    est = PoseEstimator()
+    cal = SilhouetteCalibrator()
+    v = cv2.VideoCapture(mov)
+    fps = v.get(cv2.CAP_PROP_FPS)
+    dt = 1.0 / fps
+    for _ in range(300):  # lock Ws on the real view first
+        ok, fr = v.read()
+        out = est.extract(fr) if ok else None
+        if out is not None:
+            cal.update(out["points"], out["conf"], dt)
+    assert cal.locked
+    v.set(cv2.CAP_PROP_POS_FRAMES, 400)  # real swing window (~7.7 s)
+    resolved = False
+    for _ in range(140):
+        ok, fr = v.read()
+        if not ok:
+            break
+        out = est.extract(fr)
+        if out is None:
+            continue
+        tr = fsm.update({"points": cal.norm(out["points"]),
+                         "conf": out["conf"]}, dt)
+        if tr is not None and tr.event == "motion_peak":
+            resolved = True
+            break
+    v.release()
+    assert resolved, "the real 7.7 s swing must resolve the window"
     assert fsm.state == RESOLVE

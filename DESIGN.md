@@ -54,6 +54,18 @@ progresses.
   client sends `stance` on the STANCE→ACTION edge so the server deals the AI
   pitch; server re-arms from MENU on `stance` without resetting the game.
   Live-wire proof: stance→ACTION→hit_result+score, timeout→rearm.
+- **Server FSM robustness pass (built after ~07:30):** the batter.mov-tuned
+  gates moved into shared `server/config.py` (LOCK 0.3 / NOSE 0.5 / WRIST 0.3)
+  used by both server FSM and client; 3-frame max-confidence history for
+  presence; flicker-tolerant menu dwell (0.3 s gaps pause, longer resets) and
+  stance hold (0.15 s); midpoint stance gate immune to L/R wrist swaps in
+  front view; crossed-hold/pause read current confident samples (not stale
+  tracked positions); menu stance-shortcut (2 s held stance = BAT pick) and
+  8 s idle auto-pick BAT backstop with on-screen countdown; occlusion
+  ride-through when already moving (motion blur) with a 0.5 s both-blind hard
+  cap; re-arm now flows straight into the pitch (phase → ACTION with pitch
+  attached); client `select` funnels through the MENU→STANCE FSM edge as the
+  single source (dwell bar is display-only).
 
 ## 2. Build process design
 
@@ -64,7 +76,7 @@ progresses.
   visual overhaul after human 10/100 look score (~05:40), first-person views +
   80×24 auto-fit (~06:10). Post-M4 hardening on real footage: detection tuning
   on `batter.mov` (~07:15, 97 pytest), "pitcher never throws" handshake fix
-  (~07:30, 100 pytest).
+  (~07:30, 100 pytest), server FSM robustness pass (109 pytest, 100/100).
 - **Agent routing** (per `agentAssignment.md`): fast inline triage for atomic
   tasks; spawned subagents for multi-step work (≥3 steps, multi-tool chains,
   cross-role synthesis); triage layer commits and formats results. M0 used
@@ -84,7 +96,8 @@ progresses.
 - **Score trajectory:** first run 82 (test-side frame-count errors) → 98
   (one real server bug: billboard NameError) → **100/100** after also fixing
   a foul-reset gap. Pytest grew 92 → 95 → 97 (batter.mov tests) → 100
-  (handshake tests) alongside; gates now take ~60–90 s (video streaming).
+  (handshake tests) → 109 (FSM robustness tests) alongside; gates now take
+  ~60–90 s (video streaming).
 - **Real-footage fixtures:** `batter.mov` (167 MB, repo root, local-only —
   NOT pushed: exceeds GitHub's 100 MB limit and is personal footage) is
   streamed by `test_batter_mov_*` + `terminal_client` eval. Newer pose models
@@ -122,6 +135,11 @@ progresses.
 | 2026-11-04 | Keep pose model 0001; 0005/0007 + CLAHE rejected | Tested worse on batter.mov; 0001 kept as active backend | Built, 0005/0007 kept as reference |
 | 2026-11-04 | Edge-triggered stance + server re-arm from MENU | Camera path never told server batter was loaded → no AI pitch ever | Built, live-wire proven |
 | 2026-11-04 | `batter.mov` stays local-only, excluded from push | 167 MB > GitHub 100 MB limit; personal footage on public repo | Decided (doc run) |
+| 2026-11-04 | Unified gates in `server/config.py` shared by server + client | Client had forked its own LOCK_CONF 0.35; single source prevents drift | Built |
+| 2026-11-04 | Flicker-tolerant dwell (0.3 s) / stance-hold (0.15 s) gaps | Real wrist flicker kept resetting the 2 s menu dwell | Built + eval'd |
+| 2026-11-04 | Menu stance-shortcut + 8 s auto-pick BAT | Idle players never got a game; held stance is unambiguous BAT | Built + eval'd |
+| 2026-11-04 | Occlusion ride-through when moving (0.5 s blind cap) | 4th-frame-fail fired on motion blur mid-swing | Built + eval'd |
+| 2026-11-04 | Re-arm flows straight into pitch; select via FSM edge | Extra round-trip + dual select paths (dwell vs FSM) could diverge | Built + eval'd |
 
 ## 5. Open questions
 
@@ -140,6 +158,8 @@ progresses.
    footage on a public repo.)
 
 ---
-*Last doc update: 2026-11-04 ~07:45 UTC (M0–M4 + real-footage hardening done,
-evals 100/100, pytest 100 green — verified this run). Next update on the
-2-hour doc cadence or when the human live-run lands.*
+*Last doc update: 2026-11-04 (M0–M4 + footage hardening + FSM robustness,
+evals 100/100, pytest 109 green — verified this run). Note: the build's own
+`asd-ste100/index.html` was not updated by this work session, so its header
+still says "100 pytest" — this file is the accurate record. Next update on
+the 2-hour doc cadence or when the human live-run lands.*

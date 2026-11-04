@@ -156,10 +156,10 @@ def test_stance_rearms_from_menu_without_reset():
     s.update(10.5)  # STANCE_TIMEOUT_S
     assert s.phase == "03_MENU_SELECT"
     r = s.handle({"t": "stance", "held_s": 0.6})
-    assert s.phase == "04_STANCE_READY"
+    assert s.phase == "05_ACTION_WINDOW"  # re-arm flows into the pitch
     assert s.game is game_before, "re-arm must not reset the game"
     assert r[0].get("event") == "rearm"
-    # ... and the re-armed session deals + resolves a pitch normally.
+    # ... and the re-armed session resolves the pitch normally.
     r = s.handle({"t": "throw", "pitch": "FB", "arm_ws": 4.0,
                   "nose_shift_ws": 0.0})
     assert s.phase == "06_PLAY_RESOLVE"
@@ -203,3 +203,27 @@ def test_stance_edge_sends_once_on_load():
                       ("03_MENU_SELECT", "04_STANCE_READY")):
         assert maybe_send_stance_edge(c, prev, cur) is False
     assert len(c.sent) == 1
+
+
+def test_select_edge_sends_fsm_role_once():
+    from client.main import maybe_send_select_edge
+
+    class FakeClient:
+        def __init__(self):
+            self.sent = []
+
+        def send_event(self, m):
+            self.sent.append(m)
+
+    c = FakeClient()
+    assert maybe_send_select_edge(c, "03_MENU_SELECT", "04_STANCE_READY",
+                                  "PITCH", 6) is True
+    assert [(m["t"], m.get("role"), m.get("innings")) for m in c.sent] == [
+        ("select", "PITCH", 6)]
+    assert maybe_send_select_edge(c, "03_MENU_SELECT", "04_STANCE_READY",
+                                  None, 3) is True
+    assert c.sent[-1]["role"] == "BAT"  # safe default, never empty
+    for prev, cur in (("03_MENU_SELECT", "03_MENU_SELECT"),
+                      ("04_STANCE_READY", "05_ACTION_WINDOW")):
+        assert maybe_send_select_edge(c, prev, cur, "BAT", 3) is False
+    assert len(c.sent) == 2

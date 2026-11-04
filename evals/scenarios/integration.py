@@ -178,16 +178,18 @@ def check_int_phase_flow():
             _assert_score_json(x)
     assert make_score(s.game)["half"] == "bottom"
     # Timeout recovery: resolve done -> STANCE, stance timeout -> MENU,
-    # then stance re-arms WITHOUT resetting the game.
+    # then stance re-arms (no reset) and flows straight into the pitch.
     s.update(4.0)
     assert s.phase == STANCE, "resolve done->STANCE"
     s.update(10.5)
     assert s.phase == MENU, "stance timeout->MENU"
     game_before = s.game
     r = s.handle({"t": "stance", "held_s": 0.6})
-    assert s.phase == STANCE, "re-arm->STANCE"
+    assert s.phase == ACTION, "re-arm->ACTION"
     assert s.game is game_before, "re-arm must not reset the game"
     assert r[0].get("event") == "rearm", "rearm event, got %r" % (r,)
+    assert s.pending_pitch is not None, "re-arm deals the AI pitch"
+    assert any("pitch" in x for x in r), "pitch rides the re-arm reply"
     return "calibrate->menu->stance->action->resolve->swap + re-arm + scores"
 
 

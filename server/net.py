@@ -131,11 +131,13 @@ class Session:
             self._set_phase(STANCE)
             return [self.state_msg(), make_score(g)]
         if t == "stance":
+            rearmed = False
             if self.phase == MENU:
-                # Re-arm after a timeout without resetting the game.
+                # Re-arm after a timeout (or a no-select client flow)
+                # without resetting the game, then handle as a stance.
                 self.pending_pitch = None
                 self._set_phase(STANCE)
-                return [self.state_msg({"event": "rearm"})]
+                rearmed = True
             if self.phase != STANCE:
                 return [make_error("stance only valid in STANCE_READY")]
             held = float(msg.get("held_s", 0.0))
@@ -145,7 +147,12 @@ class Session:
             self._set_phase(ACTION)
             if g.half == "bottom" and not g.over:
                 self.pending_pitch = self._ai_pitch_for_batter()
-                return [self.state_msg({"pitch": self.pending_pitch})]
+                extra = {"pitch": self.pending_pitch}
+                if rearmed:
+                    extra["event"] = "rearm"
+                return [self.state_msg(extra)]
+            if rearmed:
+                return [self.state_msg({"event": "rearm"})]
             return [self.state_msg()]
         if t == "swing":
             if g.over:

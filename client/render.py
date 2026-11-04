@@ -124,11 +124,14 @@ class TerminalRenderer:
 
     # -- overlays ------------------------------------------------------
     def render_menu(self, options=("BAT", "PITCH"), dwell_frac=0.0,
-                    dwell_side=None):
+                    dwell_side=None, auto_pick_s=None):
         self.clear(BLUE)
         self.rect(0, 0, GRID_W, 20, BLACK)
         self.text("RETRO DIAMOND", 26, 6, YELLOW, scale=2)
         self.text("RAISE HAND + HOLD 2S", 42, 26, WHITE)
+        if auto_pick_s is not None:
+            self.text("AUTO-BAT %dS" % int(auto_pick_s + 0.5), 56, 158,
+                      GREY)
         for i, opt in enumerate(options):
             tx = 24 + i * 64
             hi = (dwell_side == opt)

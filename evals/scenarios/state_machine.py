@@ -3,11 +3,11 @@
 import traceback
 
 from fixtures.landmarks import (
-    DT, frame, base_points, neutral_frames, calibrate_frames, menu_frames,
-    gate_frames, crossed_frames, frustum_gap, low_torso_frames,
-    occlusion_frames, idle_sway_frames, swing_sweep_frames,
-    vertical_drift_frames, full_cycle_frames, menu_points, gate_points,
-    crossed_points,
+    DT, frame, base_points, with_wrists, repeat, neutral_frames,
+    calibrate_frames, menu_frames, gate_frames, crossed_frames,
+    frustum_gap, low_torso_frames, occlusion_frames, idle_sway_frames,
+    swing_sweep_frames, vertical_drift_frames, full_cycle_frames,
+    menu_points, gate_points, crossed_points,
 )
 from server.state_machine import (
     TrackingFSM, UNBOUND, CALIBRATE, MENU, STANCE, ACTION, RESOLVE, PAUSE,
@@ -105,7 +105,31 @@ def check_sm_timeouts():
     trs, _ = _feed(fsm, neutral_frames(241))
     assert len(trs) == 1 and trs[0][1].event == "resolve_done", "resolve done %r" % (trs,)
     assert trs[0][0] == 241, "resolve fires on frame 241, got %d" % trs[0][0]
-    return "stance@600 action@211 resolve@241 swing-peak@5"
+    # MENU dwell tolerates a 0.2 s flicker gap but resets on a 0.66 s gap.
+    fsm = TrackingFSM()
+    _to_menu(fsm)
+    seq = menu_frames("BAT", 60) + neutral_frames(12) + menu_frames("BAT", 70)
+    trs, _ = _feed(fsm, seq)
+    assert [t.event for _, t in trs] == ["menu_selected"], "gap dwell %r" % (trs,)
+    fsm = TrackingFSM()
+    _to_menu(fsm)
+    seq = menu_frames("BAT", 60) + neutral_frames(40) + menu_frames("BAT", 70)
+    trs, _ = _feed(fsm, seq)
+    assert trs == [], "long gap must reset dwell, %r" % (trs,)
+    # MENU stance shortcut: 2 s held stance declares BAT without a raise.
+    fsm = TrackingFSM()
+    _to_menu(fsm)
+    pts = with_wrists((0.3, -0.1), (0.5, -0.15))
+    trs, _ = _feed(fsm, repeat(pts, 121))
+    assert [t.event for _, t in trs] == ["stance_selected"], "shortcut %r" % (trs,)
+    assert fsm.role == "BAT"
+    # MENU idle backstop: auto-pick BAT at 8 s, exactly once.
+    fsm = TrackingFSM()
+    _to_menu(fsm)
+    trs, _ = _feed(fsm, neutral_frames(490))
+    assert [t.event for _, t in trs] == ["auto_pick"], "auto-pick %r" % (trs,)
+    assert fsm.role == "BAT" and fsm.state == STANCE
+    return "stance@600 action@211 resolve@241 swing-peak@5 dwell-gap shortcut auto-pick"
 
 
 def check_sm_occlusion():
@@ -128,7 +152,41 @@ def check_sm_occlusion():
     assert len(trs) == 1, "4-frame occlusion must transition once, %r" % (trs,)
     assert trs[0][0] == 4 and trs[0][1].event == "occlusion_fail", "occlusion fail %r" % (trs,)
     assert fsm.state == STANCE
-    return "3f extrapolated, 4th fails to STANCE"
+    # Blur ride-through: misses after real motion do not fail (0.5 s cap).
+    fsm = TrackingFSM()
+    _to_menu(fsm)
+    _to_stance(fsm)
+    _to_action(fsm)
+    sweep = [frame(with_wrists((0.45 + i * 0.05, 0.05),
+                               (0.55 + i * 0.05, 0.05))) for i in range(6)]
+    trs, _ = _feed(fsm, sweep)
+    assert trs == [] and fsm.state == ACTION
+    trs, _ = _feed(fsm, occlusion_frames(6))
+    assert trs == [] and fsm.state == ACTION, "blur must ride, %r" % (trs,)
+    # 0.5 s both-blind cap after real motion resolves a blind swing
+    # (batter.mov blurs both wrists for 25+ frames per real swing).
+    trs, _ = _feed(fsm, occlusion_frames(30))
+    assert [t.event for _, t in trs] == ["blind_swing"], "cap %r" % (trs,)
+    assert fsm.state == RESOLVE and trs[0][1].data["blind"] is True
+    # Swing onset: 0.2 s hold arms, 3 blind frames fire; a 4-frame
+    # brush through the gate does not arm.
+    fsm = TrackingFSM()
+    _to_menu(fsm)
+    _to_stance(fsm)
+    trs, _ = _feed(fsm, gate_frames(12))
+    assert trs == [] and fsm.state == STANCE, "hold must arm, %r" % (trs,)
+    trs, _ = _feed(fsm, occlusion_frames(3))
+    assert ([t.event for _, t in trs] == ["swing_onset"]
+            and fsm.state == ACTION), "onset %r" % (trs,)
+    fsm = TrackingFSM()
+    _to_menu(fsm)
+    _to_stance(fsm)
+    trs, _ = _feed(fsm, gate_frames(4))
+    assert trs == []
+    trs, _ = _feed(fsm, occlusion_frames(8))
+    assert trs == [] and fsm.state == STANCE, "unprimed %r" % (trs,)
+    return ("3f extrapolated, 4th fails; blur rides after motion, 0.5s "
+            "blind-swing cap; onset arms at 0.15s hold + 3 blind")
 
 
 def check_sm_idle_reject():
@@ -155,18 +213,18 @@ def check_sm_idle_reject():
 
 
 def check_sm_frustum_pause():
-    # None frames x60 (> 1.0 s strict) -> PAUSE from STANCE.
+    # None frames x63 (2-frame release + ~1.0 s) -> PAUSE from STANCE.
     fsm = TrackingFSM()
     _to_menu(fsm)
     _to_stance(fsm)
-    trs, _ = _feed(fsm, frustum_gap(60))
+    trs, _ = _feed(fsm, frustum_gap(63))
     assert len(trs) == 1 and trs[0][1].event == "out_of_frustum", "frustum %r" % (trs,)
-    assert trs[0][0] == 60 and fsm.state == PAUSE
+    assert trs[0][0] == 62 and fsm.state == PAUSE
     # Low torso conf behaves identically.
     fsm = TrackingFSM()
     _to_menu(fsm)
     _to_stance(fsm)
-    trs, _ = _feed(fsm, low_torso_frames(60))
+    trs, _ = _feed(fsm, low_torso_frames(64))
     assert len(trs) == 1 and trs[0][1].event == "out_of_frustum", "low-torso %r" % (trs,)
     # Crossed-wrists 1.5 s hold -> PAUSE (91 frames), release -> MENU.
     fsm = TrackingFSM()

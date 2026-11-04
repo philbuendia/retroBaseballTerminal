@@ -27,6 +27,7 @@ from .fsm import TrackingFSM, Transition  # noqa: F401
 from . import gestures as G
 from .render import TerminalRenderer
 from .audio import AudioBackend
+from server.config import MENU_AUTO_PICK_S
 
 PITCH_KEYS = {"f": "FB", "c": "CB", "s": "SL", "h": "CH"}
 
@@ -184,6 +185,21 @@ def maybe_send_stance_edge(client, prev_fsm, cur_fsm):
     return False
 
 
+def maybe_send_select_edge(client, prev_fsm, cur_fsm, role, innings):
+    """On MENU->STANCE edge, send the FSM's picked role to the server.
+
+    Single source for select (dwell/shortcut/auto-pick all funnel through
+    the FSM transition). Returns True when a select event was sent.
+    """
+    if prev_fsm == "03_MENU_SELECT" and cur_fsm == "04_STANCE_READY":
+        try:
+            client.send_event(P.make_select(role or "BAT", innings))
+        except OSError:
+            return False
+        return True
+    return False
+
+
 def pick_mode(args):
     """Fit the real terminal: 96/48/24 rows, else None (too small)."""
     if args.tall:
@@ -323,16 +339,11 @@ def run(args):
                     renderer.render_calibrate(cal.progress)
                 elif fsm.state == "03_MENU_SELECT":
                     side = G.menu_side(normed) if normed else None
-                    pick = dwell.update(side, dt)
-                    if pick:
-                        role = "BAT" if pick == "BAT" else "PITCH"
-                        try:
-                            client.send_event(
-                                P.make_select(role, args.innings))
-                        except OSError:
-                            pass
+                    dwell.update(side, dt)  # bar only; select follows FSM
+                    remain = MENU_AUTO_PICK_S - fsm.t_state
                     renderer.render_menu(dwell_frac=dwell.frac,
-                                         dwell_side=side)
+                                         dwell_side=side,
+                                         auto_pick_s=max(0.0, remain))
                 elif fsm.state == "07_SYSTEM_PAUSE":
                     renderer.render_pause()
                     try:
@@ -377,6 +388,8 @@ def run(args):
                         throw.reset()
                         swing.reset()
                 maybe_send_stance_edge(client, prev_fsm, fsm.state)
+                maybe_send_select_edge(client, prev_fsm, fsm.state,
+                                       fsm.role, args.innings)
                 for ch in _read_keys():  # q quits, p pauses from keyboard
                     if ch.lower() == "q":
                         frames = args.max_frames or frames

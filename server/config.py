@@ -24,9 +24,23 @@ STANCE_GATE_HOLD_S = 0.5
 STANCE_GATE_DIST_WS = 0.5
 
 # --- Tracking robustness ---
-CONF_MIN = 0.6
+CONF_MIN = 0.6  # spec tracking grade (reference; see adapted gates below)
+# Adapted gates, measured on batter.mov (dim front chest-up view: shoulder
+# peaks ~0.4, wrist peaks 0.1-0.4, hips out of frame). Mechanics (median Ws,
+# 3-frame extrapolation, 4th-frame fail) are unchanged from the spec.
+LOCK_CONF = 0.3  # torso-presence gate for calibration/FSM visibility
+NOSE_CONF = 0.5  # face-anchor gate for the hips-absent close-range path
+WRIST_CONF = 0.3  # wrist sample gate; below this a frame is a dropout
+DWELL_GAP_S = 0.3  # menu-dwell flicker tolerance (gaps pause, not reset)
+GATE_GAP_S = 0.15  # stance-hold flicker tolerance (gaps pause, not reset)
+MENU_AUTO_PICK_S = 8.0  # menu idle backstop: auto-pick BAT (batter default)
 EXTRAPOLATE_MAX_FRAMES = 3  # 4th consecutive missing frame = fail
 IDLE_SPEED_WS = 1.5  # below this in ACTION_WINDOW = idle posture shift
+# Swing onset (batter.mov: a real swing blurs both wrists below WRIST_CONF
+# for 25+ frames; the 0.5 s static hold alone never fires for a rhythmic
+# batter). A held stance whose wrists suddenly go blind is a swing launch.
+ONSET_ARM_S = 0.15  # stance-hold time that arms swing-onset detection
+ONSET_BLIND_FRAMES = 3  # both-wrists-stale run that fires swing onset
 
 # --- Batting kinematics ---
 VH_MIN_WS = 2.0

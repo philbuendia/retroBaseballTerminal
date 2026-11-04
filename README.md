@@ -29,7 +29,7 @@ to bat, throw toward the lens to pitch.
 | `client/` | Terminal client: OpenCV capture, OpenVINO pose, ANSI render, synth audio |
 | `server/` | Game server (stdlib-only): FSM, kinematics, rules, NDJSON TCP server |
 | `evals/` | 100-pt spec rubric (7 scenarios) + screenshot harness |
-| `tests/` | Pytest suite (100 tests, streams `batter.mov`) |
+| `tests/` | Pytest suite (109 tests, streams `batter.mov`) |
 | `models/` | OpenVINO pose models (0001 active; 0005/0007 reference) + test photo |
 | `batter.mov` | **Local-only**, not in git: 20 s real batting footage, required fixture |
 | `asd-ste100/` | Progress report (`index.html`) + eval-run screenshots (`shots/`) |
@@ -37,9 +37,9 @@ to bat, throw toward the lens to pitch.
 ## Status
 
 Working prototype, all milestones M0–M4 complete, plus detection tuning on
-real footage. Verified this doc run: **evals 100/100 (PASS, threshold 90),
-pytest 100 passed**, zero `random` usage, live client↔server replay run
-green. See [asd-ste100/index.html](asd-ste100/index.html) for the full
+real footage and an FSM robustness pass. Verified this doc run:
+**evals 100/100 (PASS, threshold 90), pytest 109 passed**, zero `random`
+usage, live client↔server replay run green. See [asd-ste100/index.html](asd-ste100/index.html) for the full
 progress report with screenshots, and [DESIGN.md](DESIGN.md) for design and
 decisions. Remaining: human live-camera run + audio check (see report).
 
