@@ -18,11 +18,16 @@ ul{margin:.3em 0}
 </head>
 <body>
 <h1>⚾ Retro Diamond: Optical Arcade — Progress Report</h1>
-<p class="updated">Last updated: 2026-11-04 ~06:10 UTC · All milestones complete · Score: <strong>100/100 (threshold 90) — PASS, first-person + screenshot evals</strong></p>
+<p class="updated">Last updated: 2026-11-04 ~07:15 UTC · All milestones complete · Score: <strong>100/100 (threshold 90) — PASS, detection tuned on batter.mov</strong></p>
 
 <h2>Reality snapshot</h2>
 <p>Working terminal prototype done. Server (12 modules, stdlib-only) + terminal client (11 modules: OpenCV capture, OpenVINO pose, ANSI render, synth audio) + 94 pytest tests + 7-scenario eval harness. Eval score <strong>100/100</strong>, pytest <strong>94 passed</strong>, zero <code>random</code> usage anywhere, live client↔server replay run exits 0.</p>
-<p><strong>First-person game (new).</strong> Broadcast side view replaced: batting half shows the <strong>batter's view</strong> (pitcher on the mound, ball growing as it flies at you, your bat in the corner, plate timing brackets, contact flash); pitching half shows the <strong>pitcher's view</strong> (catcher + glove target, zone frame, backstop net, mound dirt, release streak). Ball animation is driven by real server pitch events. Also fixed: client auto-fits <strong>80×24 stock terminals</strong> (was 48-row-only scrolling garbage on default macOS Terminal — the likely 11/100 cause) and a live-scoreboard bug (server sends lowercase <code>home/away</code>, client read uppercase → always H0 A0).</p>
+<p><strong>Movement detection tuned on batter.mov (new).</strong> Your 20 s front chest-up footage exposed the real pipeline: calibration <em>never locked</em> (hips out of frame), and every 50+ Ws/s spike rode on ~0.00 confidence. Fixed: close-range calibration fallback (shoulders + nose, 0.35 presence gate, median-guarded Ws), EMA-smoothed wrist midpoint, confidence-gated gap-aware trackers. Measured now: lock at ~2 s (Ws≈1179px), 3 real swings tracked (peaks 8–14 Ws/s, server clamps ≥8 to 115mph). Newer pose models (0005/0007) and CLAHE tested worse — 0001 stays. Tests + evals stream batter.mov directly (gates now take ~60 s).</p>
+<table>
+<tr><th>Camera view (batter.mov frame)</th><th>Pose detections on it</th></tr>
+<tr><td><img src="shots/batter_view.jpg" width="100%" alt="batter view"></td><td><img src="shots/batter_skel.jpg" width="100%" alt="detections"></td></tr>
+</table>
+<p><strong>First-person game.</strong> Broadcast side view replaced: batting half shows the <strong>batter's view</strong> (pitcher on the mound, ball growing as it flies at you, your bat in the corner, plate timing brackets, contact flash); pitching half shows the <strong>pitcher's view</strong> (catcher + glove target, zone frame, backstop net, mound dirt, release streak). Ball animation is driven by real server pitch events. Also fixed: client auto-fits <strong>80×24 stock terminals</strong> (was 48-row-only scrolling garbage on default macOS Terminal — the likely 11/100 cause) and a live-scoreboard bug (server sends lowercase <code>home/away</code>, client read uppercase → always H0 A0).</p>
 <p><strong>Visual overhaul (human scored the old look 10/100 — agreed).</strong> Screenshot review showed all small text destroyed by downsampling and a weak field. Fixed: crisp cell-text overlay for all text/bars/reticles, alternate-screen live mode. Evals now capture 9 real screenshots per run (parsed ANSI → PNG in Menlo, exactly what a terminal shows) and assert on legibility + pixel stats. Screenshots below are written by the eval run itself.</p>
 <h2>Screenshots (from the latest eval run)</h2>
 <table>
@@ -79,6 +84,8 @@ python -m server --port 8765 --innings 3
 python -m client.main --server 127.0.0.1 --port 8765 --replay models/person.jpg --no-audio
 # client with live camera (click Allow on the macOS prompt):
 python -m client.main --server 127.0.0.1 --port 8765
+# client driven by your recorded batter footage:
+python -m client.main --server 127.0.0.1 --port 8765 --replay batter.mov --no-audio
 # gates:
 python -m pytest tests/ -q
 python evals/run_evals.py --json /tmp/eval.json --threshold 90</pre>
@@ -87,6 +94,8 @@ python evals/run_evals.py --json /tmp/eval.json --threshold 90</pre>
 <div class="human">
 <ul>
 <li><strong>Nothing is blocked.</strong> All agent-verifiable work is complete at 100/100.</li>
+<li><strong>Do not delete/move batter.mov</strong> — tests + evals stream it as the required camera-view fixture (175 MB at repo root).</li>
+<li><strong>Viewpoint note:</strong> the spec says batters stand <em>sideways</em> to the camera, but batter.mov is a <em>front</em> chest-up view — detection now follows your footage (close-range mode). If you want spec-sideways instead, record 20 s sideways and we will re-tune.</li>
 <li><strong>Re-score request:</strong> the screenshots above are byte-exact renders of what the client emits, including the new first-person views and the stock 80×24 layout. The client now auto-fits 24/48/96-row windows (needs 80 columns, dark background). If the live game still looks bad, tell us which screen and what you see — a phone photo of the terminal helps most.</li>
 <li><strong>Step 1 — live camera run (you, ~5 min):</strong> run the server + live-camera client above in your own terminal, click Allow on the macOS camera prompt, stand 4–7 ft back, and confirm menu dwell → stance → swing/throw → pause overlay each respond. Report back which gesture (if any) misbehaves and we will tune thresholds.</li>
 <li><strong>Step 2 — audio check:</strong> re-run the client without <code>--no-audio</code>; confirm whistle/crack/swell/jingle play via speakers. If silent, check the fallback message — the silent branch is what CI exercises.</li>
@@ -97,6 +106,8 @@ python evals/run_evals.py --json /tmp/eval.json --threshold 90</pre>
 
 <h2>Log</h2>
 <ul>
+<li>~07:30 UTC — “Pitcher never throws” fixed: camera path now sends stance on load (edge-triggered), server re-arms from MENU without resetting. Live-wire proof: stance→ACTION→hit_result+score, timeout→rearm. 100/100 + 100 pytest green.</li>
+<li>~07:15 UTC — Detection tuned on batter.mov: close-range calibration, gated trackers, 3 real swings tracked. 100/100 + 97 pytest green.</li>
 <li>~06:10 UTC — First-person views (batter/pitcher) + 80×24 auto-fit + live scoreboard fix. 100/100 + 95 pytest green, 9 screenshots/run.</li>
 <li>~05:40 UTC — Visual overhaul after human 10/100: overlay text renderer, screenshot evals (7 PNGs/run), alt-screen live mode. 100/100 + 94 pytest green.</li>
 <li>~05:20 UTC — M4 done. Live replay run exit 0. Final score 100/100. Report finalized.</li>

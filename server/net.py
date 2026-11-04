@@ -131,6 +131,11 @@ class Session:
             self._set_phase(STANCE)
             return [self.state_msg(), make_score(g)]
         if t == "stance":
+            if self.phase == MENU:
+                # Re-arm after a timeout without resetting the game.
+                self.pending_pitch = None
+                self._set_phase(STANCE)
+                return [self.state_msg({"event": "rearm"})]
             if self.phase != STANCE:
                 return [make_error("stance only valid in STANCE_READY")]
             held = float(msg.get("held_s", 0.0))

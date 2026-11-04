@@ -29,18 +29,26 @@ to bat, throw toward the lens to pitch.
 | `client/` | Terminal client: OpenCV capture, OpenVINO pose, ANSI render, synth audio |
 | `server/` | Game server (stdlib-only): FSM, kinematics, rules, NDJSON TCP server |
 | `evals/` | 100-pt spec rubric (7 scenarios) + screenshot harness |
-| `tests/` | Pytest suite (95 tests) |
-| `models/` | OpenVINO pose model + test photo for replay mode |
+| `tests/` | Pytest suite (100 tests, streams `batter.mov`) |
+| `models/` | OpenVINO pose models (0001 active; 0005/0007 reference) + test photo |
+| `batter.mov` | **Local-only**, not in git: 20 s real batting footage, required fixture |
 | `asd-ste100/` | Progress report (`index.html`) + eval-run screenshots (`shots/`) |
 
 ## Status
 
-Working prototype, all milestones M0–M4 complete. Verified this doc run:
-**evals 100/100 (PASS, threshold 90), pytest 95 passed**, zero `random`
-usage, live client↔server replay run green. See
-[asd-ste100/index.html](asd-ste100/index.html) for the full progress report
-with screenshots, and [DESIGN.md](DESIGN.md) for design and decisions.
-Remaining: human live-camera run + audio check (see report).
+Working prototype, all milestones M0–M4 complete, plus detection tuning on
+real footage. Verified this doc run: **evals 100/100 (PASS, threshold 90),
+pytest 100 passed**, zero `random` usage, live client↔server replay run
+green. See [asd-ste100/index.html](asd-ste100/index.html) for the full
+progress report with screenshots, and [DESIGN.md](DESIGN.md) for design and
+decisions. Remaining: human live-camera run + audio check (see report).
+
+> **Note on `batter.mov`:** tests and evals stream this 167 MB video from the
+> repo root, but it is deliberately **not pushed** — it exceeds GitHub's
+> 100 MB file limit and is personal footage on a public repo. Fresh clones
+> must supply their own copy at `./batter.mov` (or ask about Git LFS) before
+> the `test_batter_mov_*` tests and the `terminal_client` eval scenario will
+> pass; everything else runs without it.
 
 ![batter view](asd-ste100/shots/field_bat.png)
 ![pitcher view](asd-ste100/shots/field_pitch.png)
@@ -55,7 +63,9 @@ python -m server --port 8765 --innings 3
 python -m client.main --server 127.0.0.1 --port 8765 --replay models/person.jpg --no-audio
 # client with live camera (click Allow on the macOS prompt):
 python -m client.main --server 127.0.0.1 --port 8765
-# gates:
+# client driven by recorded batter footage:
+python -m client.main --server 127.0.0.1 --port 8765 --replay batter.mov --no-audio
+# gates (each takes ~60-90 s; they stream batter.mov):
 python -m pytest tests/ -q
 python evals/run_evals.py --json /tmp/eval.json --threshold 90
 ```

@@ -16,6 +16,10 @@ STANCE_GATE_HOLD_S = 0.5
 PAUSE_HOLD_S = 1.5
 IDLE_SPEED_WS = 1.5
 NOSE_SCATTER_WS = 0.3
+# Wrist samples below this confidence are dropouts (batter.mov: every
+# spurious >50 Ws/s spike rode on conf < 0.1). Dropped frames hold the
+# last accepted position and stretch the velocity window honestly.
+WRIST_CONF_MIN = 0.3
 
 
 def _dist(ax, ay, bx, by):
@@ -132,33 +136,49 @@ class DwellTracker:
 class SwingTracker:
     """Wrist-trajectory swing capture -> wire-ready swing{...} numbers.
 
+    Tracks the EMA-smoothed wrist midpoint (both hands move together in
+    a real swing; midpoint kills lead-switch spikes seen on batter.mov).
     Feed normalized frames during the action window; result() returns
     (vh_ws, dt_s, slope, crossed). dt_s here is swing duration; the
     caller maps contact timing to the server's dt_s at resolve time.
     """
 
-    def __init__(self):
+    def __init__(self, alpha=0.4):
+        self.alpha = alpha
         self.reset()
 
     def reset(self):
-        self._path = []  # (x, y, t) lead-wrist samples
+        self._path = []  # (x, y, t) smoothed-midpoint samples
         self._vmax = 0.0
         self._t = 0.0
         self._moved = False
+        self._ema = None
+        self._drops = 0
 
-    def update(self, pts, dt):
+    def update(self, pts, dt, conf=None):
         dt = max(dt, 1e-6)
         self._t += dt
+        if conf is not None and max(conf[KP["Lwri"]],
+                                    conf[KP["Rwri"]]) < WRIST_CONF_MIN:
+            self._drops += 1  # dropout: hold last position, no velocity
+            return
         lw = pts[KP["Lwri"]]
         rw = pts[KP["Rwri"]]
-        lead = lw if abs(lw[0]) >= abs(rw[0]) else rw
+        mid = ((lw[0] + rw[0]) / 2.0, (lw[1] + rw[1]) / 2.0)
+        if self._ema is None:
+            self._ema = mid
+        else:
+            a = self.alpha
+            self._ema = (a * mid[0] + (1 - a) * self._ema[0],
+                         a * mid[1] + (1 - a) * self._ema[1])
         if self._path:
-            px, py, _ = self._path[-1]
-            v = _dist(lead[0], lead[1], px, py) / dt
+            px, py, pt = self._path[-1]
+            span = max(self._t - pt, dt)  # gap-aware: dropouts stretch dt
+            v = _dist(self._ema[0], self._ema[1], px, py) / span
             self._vmax = max(self._vmax, v)
             if v >= IDLE_SPEED_WS:
                 self._moved = True
-        self._path.append((lead[0], lead[1], self._t))
+        self._path.append((self._ema[0], self._ema[1], self._t))
 
     @property
     def moved(self):
@@ -183,7 +203,8 @@ class SwingTracker:
 class ThrowTracker:
     """Throw capture -> (arm_ws, nose_shift_ws) for throw{...}."""
 
-    def __init__(self):
+    def __init__(self, alpha=0.4):
+        self.alpha = alpha
         self.reset()
 
     def reset(self):
@@ -192,17 +213,27 @@ class ThrowTracker:
         self._nose0 = None
         self._nose_shift = 0.0
         self._moved = False
+        self._t = 0.0
 
-    def update(self, pts, dt, throwing="R"):
+    def update(self, pts, dt, throwing="R", conf=None):
         dt = max(dt, 1e-6)
         key = KP["Rwri"] if throwing == "R" else KP["Lwri"]
+        self._t += dt
+        if conf is not None and conf[key] < WRIST_CONF_MIN:
+            return  # dropout: hold, stretch the velocity window
         w = pts[key]
-        if self._prev is not None:
-            v = _dist(w[0], w[1], self._prev[0], self._prev[1]) / dt
+        if self._prev is None:
+            self._prev = (w[0], w[1], self._t)
+        else:
+            a = self.alpha
+            w = (a * w[0] + (1 - a) * self._prev[0],
+                 a * w[1] + (1 - a) * self._prev[1])
+            span = max(self._t - self._prev[2], dt)
+            v = _dist(w[0], w[1], self._prev[0], self._prev[1]) / span
             self._vmax = max(self._vmax, v)
             if v >= IDLE_SPEED_WS:
                 self._moved = True
-        self._prev = w
+            self._prev = (w[0], w[1], self._t)
         nose = pts[KP["nose"]]
         if self._nose0 is None:
             self._nose0 = nose

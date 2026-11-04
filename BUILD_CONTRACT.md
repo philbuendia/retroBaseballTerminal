@@ -95,3 +95,16 @@ terminal_client 10 / integration 5. `evals/run_evals.py --json out.json
 M1 server → M2 client → M3 fixtures+tests+evals → M4 integration.
 Each builder: read this contract + description.md + architecture.md, write ONLY
 its own directories, run its own checks, report files + how to run + gaps.
+
+## Field updates (parent-verified on real footage)
+
+- `batter.mov` (20 s, 3360x1904@57.6fps, front chest-up view) is the
+  required camera-view fixture at repo root; tests + evals stream it.
+- Calibration: 2.0 s median Ws; torso gate = shoulders ≥0.35 AND
+  (hips ≥0.35 OR nose ≥0.35); hips-absent locks flag `close_range=True`.
+  Ws samples outside 0.7–1.4x of the running median are skipped.
+- Swing/throw trackers: EMA-smoothed (alpha 0.4) wrist midpoint (swing)
+  or throwing wrist (throw); samples with wrist conf <0.3 are dropouts
+  that hold position and stretch the velocity window (gap-aware dt).
+- Measured on batter.mov: lock at ~2 s, Ws≈1179px close-range, 3 real
+  swings tracked (peaks ~8–14 Ws/s, server clamps ≥8 to 115mph).

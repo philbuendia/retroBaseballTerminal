@@ -166,7 +166,41 @@ def check_term_pose():
         assert 0.0 <= x <= frame.shape[1] and 0.0 <= y <= frame.shape[0]
     assert est.extract(None) is None, "None frame -> None"
     hi = sum(1 for c in out["conf"] if c >= 0.6)
-    return "9 landmarks on person.jpg, %d/9 conf>=0.6" % hi
+    # Real camera view: batter.mov must calibrate (close-range, no hips)
+    # and track the genuine ~7.7 s swing with a sane peak speed.
+    mov = os.path.join(ROOT, "batter.mov")
+    assert os.path.exists(mov), "batter.mov (camera view) missing"
+    from client.calibration import SilhouetteCalibrator
+    from client import gestures as G
+    cal = SilhouetteCalibrator()
+    v = cv2.VideoCapture(mov)
+    fps = v.get(cv2.CAP_PROP_FPS)
+    dt = 1.0 / fps
+    for _ in range(300):
+        ok, fr = v.read()
+        if not ok:
+            break
+        out = est.extract(fr)
+        if out is not None:
+            cal.update(out["points"], out["conf"], dt)
+    assert cal.locked, "no Ws lock on the real camera view"
+    assert cal.close_range is True, "batter.mov framing has no hips"
+    assert 900.0 <= cal.Ws <= 1400.0, "Ws=%r" % (cal.Ws,)
+    sw = G.SwingTracker()
+    v.set(cv2.CAP_PROP_POS_FRAMES, 380)
+    for _ in range(140):
+        ok, fr = v.read()
+        if not ok:
+            break
+        out = est.extract(fr)
+        if out is not None:
+            sw.update(cal.norm(out["points"]), dt, conf=out["conf"])
+    v.release()
+    assert sw.moved, "real swing missed the idle gate"
+    assert 6.0 <= sw.vh_ws <= 25.0, "swing peak vh=%r" % (sw.vh_ws,)
+    return ("9 landmarks on person.jpg, %d/9 conf>=0.6; batter.mov locks "
+            "Ws=%.0f close-range, swing peak %.1f Ws/s"
+            % (hi, cal.Ws, sw.vh_ws))
 
 
 CHECKS = [("term_render", 4, check_term_render),

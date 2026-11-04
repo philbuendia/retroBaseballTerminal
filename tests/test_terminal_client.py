@@ -186,6 +186,54 @@ def test_pose_extract_none_is_none():
     assert PoseEstimator().extract(None) is None
 
 
+BATTER_MOV = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "batter.mov")
+
+
+def _batter_extract(start, count, fn):
+    """Stream (points, conf, dt) from batter.mov without buffering frames."""
+    import cv2
+    assert os.path.exists(BATTER_MOV), "batter.mov (camera view) missing"
+    v = cv2.VideoCapture(BATTER_MOV)
+    fps = v.get(cv2.CAP_PROP_FPS)
+    dt = 1.0 / fps
+    est = PoseEstimator()
+    v.set(cv2.CAP_PROP_POS_FRAMES, start)
+    seen = 0
+    for _ in range(count):
+        ok, fr = v.read()
+        if not ok:
+            break
+        out = est.extract(fr)
+        del fr
+        if out is not None:
+            fn(out["points"], out["conf"], dt)
+            seen += 1
+    v.release()
+    return seen
+
+
+def test_batter_mov_close_range_lock():
+    cal = SilhouetteCalibrator()
+    seen = _batter_extract(0, 350, lambda p, c, dt: cal.update(p, c, dt))
+    assert seen > 200, "pose must fire on the real camera view"
+    assert cal.locked, "must lock on the real camera view"
+    assert cal.close_range is True, "chest-up framing has no hips"
+    assert 900.0 <= cal.Ws <= 1400.0, "Ws=%r" % (cal.Ws,)
+
+
+def test_batter_mov_real_swing_tracked():
+    cal = SilhouetteCalibrator()
+    _batter_extract(0, 350, lambda p, c, dt: cal.update(p, c, dt))
+    assert cal.locked
+    sw = G.SwingTracker()
+    # Window covers the ~7.7 s real swing (frame ~442 at 57.6 fps).
+    _batter_extract(380, 140,
+                    lambda p, c, dt: sw.update(cal.norm(p), dt, conf=c))
+    assert sw.moved, "the 7.7 s swing must trip the idle gate"
+    assert 6.0 <= sw.vh_ws <= 25.0, "peak vh=%r" % (sw.vh_ws,)
+
+
 def test_calibrator_locks_and_normalizes():
     cal = SilhouetteCalibrator()
     pts = [(0.0, -35.0), (-50.0, 0.0), (50.0, 0.0), (-70.0, 30.0),

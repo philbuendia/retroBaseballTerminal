@@ -143,3 +143,63 @@ def test_phase_flow_calibrate_to_swap():
     for x in r:
         if x["t"] == "score":
             _assert_score_json(x)
+
+
+def test_stance_rearms_from_menu_without_reset():
+    # Regression: after a stance timeout the session sat in MENU and
+    # every later stance errored, so the (AI) pitcher never threw again.
+    s = Session(3)
+    s.handle({"t": "hello", "v": 1})
+    s.handle({"t": "select", "role": "BOTH", "innings": 3})
+    assert s.phase == "04_STANCE_READY"
+    game_before = s.game
+    s.update(10.5)  # STANCE_TIMEOUT_S
+    assert s.phase == "03_MENU_SELECT"
+    r = s.handle({"t": "stance", "held_s": 0.6})
+    assert s.phase == "04_STANCE_READY"
+    assert s.game is game_before, "re-arm must not reset the game"
+    assert r[0].get("event") == "rearm"
+    # ... and the re-armed session deals + resolves a pitch normally.
+    r = s.handle({"t": "throw", "pitch": "FB", "arm_ws": 4.0,
+                  "nose_shift_ws": 0.0})
+    assert s.phase == "06_PLAY_RESOLVE"
+    assert {x["t"] for x in r} & {"pitch_result", "hit_result"}
+
+
+def test_ai_pitch_arrives_after_stance_then_swing_resolves():
+    # Bottom-half camera flow: stance deals the AI pitch, swing resolves it.
+    s = Session(3)
+    s.handle({"t": "hello", "v": 1})
+    s.handle({"t": "select", "role": "BOTH", "innings": 3})
+    s.game.half = "bottom"  # bottom half: player bats vs AI pitcher
+    r = s.handle({"t": "stance", "held_s": 0.6})
+    assert s.phase == "05_ACTION_WINDOW"
+    assert s.pending_pitch is not None, "AI pitcher must deal on stance"
+    assert any("pitch" in x for x in r), "stance reply carries the pitch"
+    r = s.handle({"t": "swing", "vh_ws": 5.0, "dt_s": 0.05,
+                  "slope": 0.4, "crossed": True})
+    assert {x["t"] for x in r} & {"pitch_result", "hit_result"}
+
+
+def test_stance_edge_sends_once_on_load():
+    from client.main import maybe_send_stance_edge
+
+    class FakeClient:
+        def __init__(self):
+            self.sent = []
+
+        def send_event(self, m):
+            self.sent.append(m)
+
+    c = FakeClient()
+    assert maybe_send_stance_edge(c, "04_STANCE_READY",
+                                  "05_ACTION_WINDOW") is True
+    assert [m["t"] for m in c.sent] == ["stance"]
+    assert c.sent[0]["held_s"] >= 0.5
+    # No other transition may emit stance (no duplicate pitches).
+    for prev, cur in (("04_STANCE_READY", "04_STANCE_READY"),
+                      ("05_ACTION_WINDOW", "05_ACTION_WINDOW"),
+                      ("05_ACTION_WINDOW", "06_PLAY_RESOLVE"),
+                      ("03_MENU_SELECT", "04_STANCE_READY")):
+        assert maybe_send_stance_edge(c, prev, cur) is False
+    assert len(c.sent) == 1

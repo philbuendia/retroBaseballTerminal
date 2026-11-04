@@ -40,6 +40,20 @@ progresses.
   sees catcher + zone); crisp cell-text overlay after screenshot review showed
   downsampled text was illegible; chip-synth audio via `afplay` with silent
   fallback.
+- **Detection tuning on real footage (built ~07:15):** the user's 20 s front
+  chest-up `batter.mov` (3360x1904@57.6fps) exposed two failures — calibration
+  never locked (hips out of frame) and every 50+ Ws/s velocity spike rode on
+  ~0.00 wrist confidence. Fixes: close-range calibration fallback (lock on
+  shoulders ≥0.35 + (hips ≥0.35 OR nose ≥0.35), sets `close_range` flag when
+  hips absent; 2.0 s median Ws with 0.7–1.4x outlier rejection), EMA-smoothed
+  (alpha 0.4) wrist-midpoint swing tracker + smoothed throwing-wrist tracker,
+  wrist-conf <0.3 treated as dropouts that hold position and stretch the
+  velocity window (gap-aware dt). Measured: lock at ~2 s (Ws≈1179px),
+  3 real swings tracked (peaks 8–14 Ws/s; server clamps ≥8 to 115 mph).
+- **Camera-path stance handshake (built ~07:30, "pitcher never throws" fix):**
+  client sends `stance` on the STANCE→ACTION edge so the server deals the AI
+  pitch; server re-arms from MENU on `stance` without resetting the game.
+  Live-wire proof: stance→ACTION→hit_result+score, timeout→rearm.
 
 ## 2. Build process design
 
@@ -48,7 +62,9 @@ progresses.
   `M2_PROBE_OK`: 9/9 keypoints on real photo, conf 0.67–0.88) → M3 evals+tests
   (~05:10, 100/100) → M4 integration (~05:20, live replay exit 0). Follow-ups:
   visual overhaul after human 10/100 look score (~05:40), first-person views +
-  80×24 auto-fit (~06:10).
+  80×24 auto-fit (~06:10). Post-M4 hardening on real footage: detection tuning
+  on `batter.mov` (~07:15, 97 pytest), "pitcher never throws" handshake fix
+  (~07:30, 100 pytest).
 - **Agent routing** (per `agentAssignment.md`): fast inline triage for atomic
   tasks; spawned subagents for multi-step work (≥3 steps, multi-tool chains,
   cross-role synthesis); triage layer commits and formats results. M0 used
@@ -67,7 +83,13 @@ progresses.
   data; server math deterministic (no random outcomes, grep-verified).
 - **Score trajectory:** first run 82 (test-side frame-count errors) → 98
   (one real server bug: billboard NameError) → **100/100** after also fixing
-  a foul-reset gap. Pytest grew 92 → 95 green alongside.
+  a foul-reset gap. Pytest grew 92 → 95 → 97 (batter.mov tests) → 100
+  (handshake tests) alongside; gates now take ~60–90 s (video streaming).
+- **Real-footage fixtures:** `batter.mov` (167 MB, repo root, local-only —
+  NOT pushed: exceeds GitHub's 100 MB limit and is personal footage) is
+  streamed by `test_batter_mov_*` + `terminal_client` eval. Newer pose models
+  0005/0007 + CLAHE tested worse than 0001 on it, so 0001 stays; 0005/0007
+  binaries are committed under `models/` for reference.
 - **Screenshot evals:** after the human scored the old look 10/100, evals
   capture 9 real screenshots per run (parsed ANSI → PNG, byte-exact terminal
   output) and assert legibility + pixel stats. Shots committed under
@@ -95,6 +117,11 @@ progresses.
 | 2026-11-04 | Hit precedence HR > 3B > 2B > 1B > OUT; below-min velocity downgrades one class | Spec angle ranges overlap; needed a deterministic rule | Locked in contract |
 | 2026-11-04 | First-person views + cell-text overlay + 80×24 auto-fit | Human scored old broadcast look 10/100; small text illegible after downsampling | Built, screenshot-eval'd |
 | 2026-11-04 | Evals capture 9 screenshots/run and assert legibility | Byte-exact renders prevent visual regressions agents can't otherwise see | Built |
+| 2026-11-04 | Close-range calibration (nose fallback, 0.35 gate, median-guarded Ws) | Real chest-up footage has no hips; shoulder peaks ~0.4 in dim light | Built, verified on batter.mov |
+| 2026-11-04 | EMA-smoothed midpoint/dropout-gated trackers | Lead-wrist switching spiked vh; all 50+ Ws/s spikes rode on ~0 conf | Built, 3 real swings tracked |
+| 2026-11-04 | Keep pose model 0001; 0005/0007 + CLAHE rejected | Tested worse on batter.mov; 0001 kept as active backend | Built, 0005/0007 kept as reference |
+| 2026-11-04 | Edge-triggered stance + server re-arm from MENU | Camera path never told server batter was loaded → no AI pitch ever | Built, live-wire proven |
+| 2026-11-04 | `batter.mov` stays local-only, excluded from push | 167 MB > GitHub 100 MB limit; personal footage on public repo | Decided (doc run) |
 
 ## 5. Open questions
 
@@ -102,11 +129,17 @@ progresses.
    `--replay`, human runs live camera in their own terminal (awaiting run).
 2. ~~CDN vs vendored pose model?~~ Answered: local OpenVINO model, no CDN.
 3. ~~Port conflicts on 127.0.0.1:8765?~~ No conflict reported; in use.
-4. NEW: human re-score of first-person visuals (phone photo if still bad)?
-5. NEW: does ~16 fps pose (vs 60 fps spec) matter? Options: smaller model or
+4. Human re-score of first-person visuals (phone photo if still bad)?
+5. Does ~16 fps pose (vs 60 fps spec) matter? Options: smaller model or
    Apple-silicon GPU delegate.
+6. NEW: viewpoint — spec says batters stand *sideways*, but batter.mov is a
+   *front* chest-up view and detection now follows the footage. Record 20 s
+   sideways if spec-sideways is wanted.
+7. NEW: `batter.mov` distribution — keep local-only, or set up Git LFS so
+   fresh clones get the required fixture? (Also a privacy call: it's personal
+   footage on a public repo.)
 
 ---
-*Last doc update: 2026-11-04 ~06:30 UTC (M0–M4 done, evals 100/100, pytest 95
-green — verified this run). Next update on the 2-hour doc cadence or when the
-human live-run lands.*
+*Last doc update: 2026-11-04 ~07:45 UTC (M0–M4 + real-footage hardening done,
+evals 100/100, pytest 100 green — verified this run). Next update on the
+2-hour doc cadence or when the human live-run lands.*

@@ -168,6 +168,22 @@ def _handle_server_msgs(msgs, audio, log):
             audio.whistle()
 
 
+def maybe_send_stance_edge(client, prev_fsm, cur_fsm):
+    """On STANCE->ACTION edge, send stance so the server deals the pitch.
+
+    Without this the camera path never tells the server the batter is
+    loaded: no AI pitch arrives and every swing errors out. Returns True
+    when a stance event was sent.
+    """
+    if prev_fsm == "04_STANCE_READY" and cur_fsm == "05_ACTION_WINDOW":
+        try:
+            client.send_event(P.make_stance(0.6))
+        except OSError:
+            return False
+        return True
+    return False
+
+
 def pick_mode(args):
     """Fit the real terminal: 96/48/24 rows, else None (too small)."""
     if args.tall:
@@ -281,6 +297,7 @@ def run(args):
                                       "PITCH" if ctx["pitching"] else "BAT"),
                     (log[-1] if log else "G STANCE SPC HIT")[0:28])
             else:
+                prev_fsm = fsm.state
                 frame = source.read_frame()
                 if frame is None and isinstance(
                         getattr(source, "drops", None), int):
@@ -341,9 +358,9 @@ def run(args):
                         ctx["pitch"] = G.classify_pitch_pose(normed)
                     elif fsm.state == "05_ACTION_WINDOW":
                         if ctx["pitching"]:
-                            throw.update(normed, dt)
+                            throw.update(normed, dt, conf=lm["conf"])
                         else:
-                            swing.update(normed, dt)
+                            swing.update(normed, dt, conf=lm["conf"])
                     elif fsm.state == "06_PLAY_RESOLVE":
                         try:
                             if ctx["pitching"]:
@@ -359,6 +376,7 @@ def run(args):
                             pass
                         throw.reset()
                         swing.reset()
+                maybe_send_stance_edge(client, prev_fsm, fsm.state)
                 for ch in _read_keys():  # q quits, p pauses from keyboard
                     if ch.lower() == "q":
                         frames = args.max_frames or frames
